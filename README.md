@@ -15,10 +15,50 @@ builder applied, so the rendered result is the same pixel for pixel.
 | `/thankyou/` | Thankyou (clone, 2026-10-11) | same page without the first two proof screenshots |
 | `/privacy-policy/` | Privacy Policy | |
 
+## Application survey (custom form)
+
+The ROASForm embed on the opt-in page is replaced by a custom survey (`assets/survey.js` +
+`assets/survey.css`, no build step) modelled on the Stone Systems funnel survey: one question per
+screen, tap answers auto-advance, endowed progress bar, back button, Safari-safe slide strip, mobile
+keyboard focus handling, honeypot, US/CA phone gating, and an abandonment partial-save once a valid
+phone exists (tab hidden, page left, or 5 min idle).
+
+Steps: timeline → business owner → capital → city → phone → email → name → **Check My Eligibility**.
+
+Routing after submit (decided server-side):
+
+| Answer / verdict | Result |
+| --- | --- |
+| capital = "No - I do not qualify to book a call" | not-a-fit panel, lead stored and sent to GHL with `qualified=false` |
+| anything else | GHL booking calendar inline (prefilled), or the thanks panel while `data-calendar` is empty |
+| honeypot, non US/CA IP, fake/test identity | thanks panel; nothing stored, nothing sent |
+
+Configure on the `#dealer-survey` element in `index.html` (and the `onyaroof-funnel-page/` copy):
+`data-api` = Worker base URL, `data-calendar` = GHL booking-widget URL
+(`https://api.leadconnectorhq.com/widget/booking/<calendarId>`). Set the calendar's post-booking
+redirect to `https://startroofrejuvenating.com/thankyou-page/` so the Add To Calendar button works.
+
+## API (`worker/`)
+
+Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database (`roof-funnel-leads`).
+
+- `POST /lead` and `POST /lead/partial`: CORS origin check → 8/min rate limit (binding) + 40/h (D1)
+  → honeypot → IP country → validation gate (reject 400 / ghost silent / process) → D1 upsert by phone
+  (a partial never overwrites a full; a full upgrades the partial, also under `superseded_phone`) →
+  GHL inbound webhook pushed in the background with `ghl_status` recorded on the row.
+- `GET /leads?since=<ISO>&limit=<n>` with `Authorization: Bearer <ADMIN_TOKEN>`: JSON export.
+- Secrets (`npx wrangler secret put`): `GHL_WEBHOOK_URL` (LeadConnector inbound-webhook workflow URL;
+  until set, rows get `ghl_status=skipped`), `ADMIN_TOKEN`. Optional vars:
+  `FAKE_LEAD_TEST_PHONE_PREFIXES`, `FAKE_LEAD_INTERNAL_EMAIL_DOMAINS`.
+- Dev: `cd worker && npm install && npm test && npm run typecheck`; `npx wrangler dev --local --port 8787`
+  (add `--var "ALLOWED_COUNTRIES:US,CA,<your country>"` when testing from outside US/CA, the geo gate
+  silently drops everything else); deploy with `npm run deploy`, migrations with `npm run migrate`.
+
+Logs mask names, phones and emails.
+
 ## What is real vs. placeholder
 
-Nothing is a placeholder. All embeds are the originals (Vidalytics VSL, ROASForm application,
-Wistia players, Google Drive previews, Google Slides warranty deck) and all 17 images that were
+Nothing is a placeholder. All embeds are the originals (Vidalytics VSL, Wistia players, Google Drive previews, Google Slides warranty deck) and all 17 images that were
 inlined as base64 on the GHL pages were decoded into real files under `assets/`.
 
 ## Tracking and third-party hooks
@@ -31,9 +71,6 @@ bottom of both thank-you pages.
 
 Things that still point at the old domain / accounts, by design (1:1 copy):
 
-- ROASForm form `030490-d116fb-7124fd` redirects to its configured thank-you URL after booking.
-  Change the redirect in ROASForm to `https://startroofrejuvenating.com/thankyou-page/` to keep the
-  funnel on this domain.
 - Footer links: `https://onyaroof.com/privacy-policy` and the viktor.page Contact page.
 - Callix attribution script loads from `m.onyaroof.com`.
 - The "Add To My Calendar" button reads `date` / `event_start_time` / `event_end_time` query

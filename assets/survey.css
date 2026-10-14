@@ -1,0 +1,77 @@
+/* Dealer application survey — ported from the Stone Systems opt-in survey, OnYa Roof colours. */
+.sv{--sv-primary:#34A5CB;--sv-dark:#1A617A;--sv-light:#5DB7D8;--sv-bg:#111;--sv-panel:#161616;--sv-border:#2a2a2a;--sv-text:#fff;--sv-muted:#999;--sv-error:#ff6b6b;
+  position:relative;display:flex;flex-direction:column;min-height:600px;padding:28px 24px 24px;color:var(--sv-text);background:var(--sv-bg);font-family:'Poppins',sans-serif;text-align:left}
+@media(max-width:600px){.sv{padding:22px 16px 18px;min-height:560px}}
+.sv *{box-sizing:border-box}
+.sv form{display:flex;flex:1;min-height:0;flex-direction:column}
+
+/* progress */
+.sv-progress-wrap{flex-shrink:0;margin-bottom:28px}
+.sv-progress{position:relative;height:24px;width:100%;overflow:hidden;border-radius:999px;background:#1f1f1f}
+.sv-progress-fill{position:absolute;inset:0 auto 0 0;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:999px;background:var(--sv-primary);padding:0 4px;transition:width .3s ease-out}
+.sv-progress-label{position:relative;z-index:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+@media(min-width:640px){.sv-progress-label{font-size:12px}}
+.sv-progress-stripes{pointer-events:none;position:absolute;inset:0;left:-24px;width:calc(100% + 24px);background-image:repeating-linear-gradient(-45deg,rgba(255,255,255,.22) 0 8px,rgba(255,255,255,.08) 8px 16px);animation:sv-stripes .9s linear infinite;will-change:transform}
+@keyframes sv-stripes{from{transform:translateX(0)}to{transform:translateX(24px)}}
+
+/* back */
+.sv-back{position:absolute;left:24px;top:28px;z-index:2;background:none;border:0;padding:0;font:inherit;font-size:14px;color:var(--sv-muted);cursor:pointer;transition:color .15s}
+.sv-back:hover{color:#ccc}
+.sv-back:focus-visible{outline:2px solid var(--sv-primary);outline-offset:2px;border-radius:4px}
+.sv-back[hidden]{display:none}
+@media(max-width:600px){.sv-back{left:16px;top:22px}}
+.sv.has-back .sv-progress-wrap{padding-top:28px}
+
+/* slides */
+.sv-viewport{position:relative;flex:1;min-height:0;min-width:0;overflow:hidden}
+.sv-track{display:flex;height:100%;transition:transform .3s ease-out;will-change:transform}
+.sv-slide{display:flex;height:100%;flex:0 0 auto;flex-direction:column;justify-content:center;padding:0 4px}
+@media(min-width:640px){.sv-slide{padding:0 8px}}
+.sv.is-safari .sv-track{display:block;transition:none;width:100%!important;transform:none!important}
+.sv.is-safari .sv-slide{display:none;width:100%!important}
+.sv.is-safari .sv-slide.is-active{display:flex;animation:sv-step-in .32s cubic-bezier(.22,1,.36,1) both}
+@keyframes sv-step-in{from{opacity:0;transform:translate3d(18px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+
+.sv-q{margin:0 0 12px;flex-shrink:0;text-align:center;font-family:'Montserrat',sans-serif;font-size:17px;font-weight:700;line-height:1.35;color:#fff}
+@media(min-width:640px){.sv-q{font-size:20px;margin-bottom:14px}}
+.sv-choices{display:flex;flex-direction:column;gap:10px;width:100%;max-width:100%}
+.sv-choice{display:flex;min-height:48px;width:100%;align-items:center;justify-content:center;border-radius:12px;border:2px solid var(--sv-border);background:var(--sv-panel);padding:12px 16px;font:inherit;font-size:14px;font-weight:700;line-height:1.35;color:#fff;text-align:center;cursor:pointer;transition:color .2s,background-color .2s,border-color .2s,box-shadow .2s}
+@media(min-width:640px){.sv-choice{min-height:52px;padding:14px 20px;font-size:16px}}
+.sv-choice:hover{border-color:var(--sv-dark);background:#1b1b1b;box-shadow:inset 1px 0 0 var(--sv-primary),0 2px 8px rgba(0,0,0,.35)}
+.sv-choice:active{background:#202020}
+.sv-choice:focus-visible{outline:2px solid var(--sv-primary);outline-offset:2px}
+.sv-choice[disabled]{opacity:.5;cursor:default}
+.sv-choice.is-selected{border-color:var(--sv-primary);background:var(--sv-primary);color:#fff;box-shadow:none}
+
+.sv-field{width:100%;border-radius:12px;border:2px solid var(--sv-border);background:#0d0d0d;padding:12px 16px;font:inherit;font-size:16px;color:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+@media(min-width:640px){.sv-field{padding:14px 16px;font-size:18px}}
+.sv-field::placeholder{color:#666}
+.sv-field:focus{border-color:var(--sv-primary);box-shadow:0 0 0 3px rgba(52,165,203,.25)}
+.sv-field.is-error,.sv-field.is-error:focus{border-color:var(--sv-error);box-shadow:0 0 0 3px rgba(255,107,107,.2)}
+.sv-error{margin:8px 0 0;text-align:center;font-size:14px;color:var(--sv-error)}
+.sv-error:empty{display:none}
+.sv-cta{margin-top:16px;width:100%;border:0;border-radius:12px;background:var(--sv-primary);padding:12px 16px;font:inherit;font-size:16px;font-weight:800;color:#fff;cursor:pointer;box-shadow:0 8px 24px rgba(52,165,203,.25);transition:background-color .15s,transform .15s,box-shadow .15s}
+@media(min-width:640px){.sv-cta{padding:14px 16px;font-size:18px}}
+.sv-cta:hover{background:var(--sv-dark);transform:translateY(-1px);box-shadow:0 8px 30px rgba(52,165,203,.3)}
+.sv-cta:focus-visible{outline:2px solid var(--sv-primary);outline-offset:2px}
+.sv-cta[disabled]{opacity:.6;cursor:default;transform:none}
+.sv-hint{margin:10px 0 0;text-align:center;font-size:12px;color:#666}
+
+/* honeypot + mirrors */
+.sv-hp{pointer-events:none;position:absolute;left:-10000px;height:0;width:0;overflow:hidden;opacity:0}
+
+/* result panels */
+.sv-panel{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:8px 4px;text-align:center}
+.sv-panel-icon{display:flex;height:64px;width:64px;align-items:center;justify-content:center;border-radius:50%;background:rgba(52,165,203,.18);font-size:32px}
+.sv-panel h3{margin:0;font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;line-height:1.3;color:#fff}
+@media(min-width:640px){.sv-panel h3{font-size:26px}}
+.sv-panel p{margin:0;max-width:560px;font-size:15px;line-height:1.6;color:#bbb}
+.sv-panel p strong{color:#fff}
+.sv-calendar{display:flex;flex:1;flex-direction:column;gap:14px}
+.sv-calendar-head{text-align:center}
+.sv-calendar-head h3{margin:0 0 6px;font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;color:#fff}
+.sv-calendar-head p{margin:0;font-size:15px;color:#bbb}
+.sv-calendar-frame{position:relative;width:100%;min-height:640px;overflow:hidden;border-radius:12px;background:#0d0d0d;border:1px solid var(--sv-border)}
+.sv-calendar-frame iframe{display:block;width:100%;min-height:640px;border:0}
+
+@media(prefers-reduced-motion:reduce){.sv-progress-stripes,.sv.is-safari .sv-slide.is-active{animation:none}.sv-track,.sv-progress-fill{transition:none}}
