@@ -4,7 +4,6 @@
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
   var titles = slides.map(function (s) { return s.getAttribute("data-title") || ""; });
   var counter = document.getElementById("counter");
-  var titleEl = document.getElementById("slide-title");
   var prev = document.getElementById("prev");
   var next = document.getElementById("next");
   var dots = document.getElementById("dots");
@@ -23,7 +22,7 @@
     slides.forEach(function (s, k) { s.classList.toggle("is-active", k === i); if (k === i) s.scrollTop = 0; });
     Array.prototype.forEach.call(dots.children, function (d, k) { d.classList.toggle("is-active", k === i); });
     counter.textContent = (i + 1) + " / " + slides.length;
-    titleEl.textContent = titles[i];
+    document.title = "OnyaRoof Dealer Program · " + titles[i].replace(/&amp;/g, "&");
     prev.disabled = i === 0; next.disabled = i === slides.length - 1;
     if (!fromHash) history.replaceState(null, "", "#" + (i + 1));
   }
