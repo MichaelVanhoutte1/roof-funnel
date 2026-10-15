@@ -58,21 +58,19 @@
   go(start ? start - 1 : 0, true);
 
   /* ---------- calculators ---------- */
-  var LABOR_PER_JOB = 150;
   var CLOSE_RATE = 0.5;
   var fmt = function (n) { return "$" + Math.round(n).toLocaleString("en-US"); };
   var fmt2 = function (n) { return "$" + n.toFixed(2); };
 
   /* One shared pricing state: the Startup calculator owns the sliders and toggle, the Reorder
      calculator reads the same values and re-renders whenever they change. */
-  var pricing = { price: 1.5, roof: 2500, solo: false, listeners: [] };
+  var pricing = { price: 1.5, roof: 2500, listeners: [] };
   function notifyPricing() { pricing.listeners.forEach(function (fn) { fn(); }); }
 
   function calculator(root, cfg) {
     var pkgs = Array.prototype.slice.call(root.querySelectorAll(".pkg"));
     var price = root.querySelector('[data-role="price"]');
     var roof = root.querySelector('[data-role="roof"]');
-    var solo = root.querySelector('[data-role="solo"]');
     var state = { pkg: cfg.defaultPkg };
     var q = function (sel) { return root.querySelector(sel); };
 
@@ -84,7 +82,6 @@
     });
     if (price) price.addEventListener("input", function () { pricing.price = parseFloat(price.value); notifyPricing(); });
     if (roof) roof.addEventListener("input", function () { pricing.roof = parseInt(roof.value, 10); notifyPricing(); });
-    if (solo) solo.addEventListener("click", function () { pricing.solo = !pricing.solo; notifyPricing(); });
     pricing.listeners.push(render);
 
     function render() {
@@ -94,22 +91,19 @@
       var leads = parseInt(p.getAttribute("data-leads"), 10);
       var jobs = Math.round(leads * CLOSE_RATE);
       var perJob = pricing.price * pricing.roof;
-      var labor = pricing.solo ? 0 : LABOR_PER_JOB;
-      var netPerJob = perJob - labor;
+      var netPerJob = perJob; // solo operator: no labor cost
       var revenue = perJob * jobs;
-      var laborTotal = labor * jobs;
-      var net = revenue - laborTotal - cost;
+      var net = revenue - cost;
       var recoup = netPerJob > 0 ? Math.ceil(cost / netPerJob) : Infinity;
       var remaining = Math.max(0, jobs - recoup);
       var roi = cost > 0 ? (net / cost) * 100 : 0;
 
       if (price) { q('[data-out="price"]').textContent = fmt2(pricing.price); q('[data-out="roof"]').textContent = pricing.roof.toLocaleString("en-US") + " sq ft"; }
-      if (solo) { solo.classList.toggle("on", pricing.solo); solo.setAttribute("aria-checked", pricing.solo ? "true" : "false"); }
       q('[data-out="invest"]').textContent = fmt(cost);
       q('[data-out="invest2"]').textContent = fmt(cost);
       q('[data-out="recoup"]').textContent = isFinite(recoup) ? (Math.min(recoup, jobs) + (recoup > jobs ? "+" : "") + (Math.min(recoup, jobs) === 1 ? " job" : " jobs")) : "—";
       q('[data-out="remaining"]').innerHTML = recoup <= jobs
-        ? "Remaining " + remaining + (remaining === 1 ? " job" : " jobs") + " = <b>" + fmt(remaining * netPerJob) + "</b> net profit after labor ✅"
+        ? "Remaining " + remaining + (remaining === 1 ? " job" : " jobs") + " = <b>" + fmt(remaining * netPerJob) + "</b> net profit ✅"
         : "This package needs " + recoup + " jobs to break even at this pricing — raise your price per sq ft or roof size.";
       q('[data-out="be-label"]').textContent = Math.min(recoup, jobs) + " of " + jobs + " jobs";
       q('[data-out="be-fill"]').style.width = Math.min(100, (Math.min(recoup, jobs) / jobs) * 100) + "%";
@@ -117,7 +111,7 @@
       q('[data-out="make-sub"]').textContent = (cfg.makeIsNet ? "net profit from " : "from ") + jobs + " jobs";
       var summary = q('[data-out="summary"]');
       if (cfg.makeIsNet) {
-        summary.innerHTML = "Total revenue: " + fmt(revenue) + " – labor " + fmt(laborTotal) + " (" + jobs + " × " + fmt(labor) + ") – package " + fmt(cost) + " = <b>" + fmt(net) + "</b>";
+        summary.innerHTML = "Total revenue: " + fmt(revenue) + " (" + jobs + " jobs × " + fmt(perJob) + ") – package " + fmt(cost) + " = <b>" + fmt(net) + "</b>";
       } else {
         summary.innerHTML = "Net profit: <b>" + fmt(net) + "</b> · <b>" + Math.round(roi) + "% ROI</b>";
       }
@@ -125,7 +119,6 @@
       if (bd) {
         bd.innerHTML =
           '<div class="bd-row"><span>Package Cost (spray + leads)</span><span class="neg">−' + fmt(cost) + '</span></div>' +
-          '<div class="bd-row"><span>Labor (' + jobs + ' jobs × ' + fmt(labor) + ')</span><span class="neg">−' + fmt(laborTotal) + '</span></div>' +
           '<div class="bd-row"><span>Revenue (' + jobs + ' jobs × ' + fmt(perJob) + ')</span><span class="pos">+' + fmt(revenue) + '</span></div>' +
           '<div class="bd-row total"><span>NET PROFIT FROM REORDER</span><span>' + fmt(net) + '</span></div>';
       }
