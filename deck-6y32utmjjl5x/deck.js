@@ -39,7 +39,7 @@
     current = i;
     slides.forEach(function (s, k) { s.classList.toggle("is-active", k === i); if (k === i) s.scrollTop = 0; });
     counter.textContent = (i + 1) + " / " + slides.length;
-    document.title = "OnyaRoof Dealer Program · " + titles[i].replace(/&amp;/g, "&");
+    document.title = "Start Roof Rejuvenating Dealer Program · " + titles[i].replace(/&amp;/g, "&");
     prev.disabled = i === 0; next.disabled = i === slides.length - 1;
     if (!fromHash) history.replaceState(null, "", "#" + (i + 1));
   }

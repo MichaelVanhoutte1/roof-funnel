@@ -155,3 +155,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .stat.cyan{background:rgba(52,165,203,.08);border-color:rgba(52,165,203,.35)}
 .stat.cyan .stat-v{color:var(--cyan)}
 .note+.note{margin-top:10px}
+
+.bar-logo{display:block;height:26px;width:auto}
+.calc-logo{display:block;height:44px;width:auto;margin:0 auto}
