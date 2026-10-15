@@ -75,9 +75,6 @@
     var q = function (sel) { return root.querySelector(sel); };
 
     pkgs.forEach(function (p, i) {
-      var leads = parseInt(p.getAttribute("data-leads"), 10);
-      var dotsEl = p.querySelector(".pkg-leads");
-      if (dotsEl) { for (var k = 0; k < leads; k++) dotsEl.appendChild(document.createElement("i")); }
       p.addEventListener("click", function () { state.pkg = i; render(); });
     });
     if (price) price.addEventListener("input", function () { pricing.price = parseFloat(price.value); notifyPricing(); });
