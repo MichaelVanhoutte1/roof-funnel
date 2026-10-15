@@ -60,16 +60,20 @@
   /* ---------- calculators ---------- */
   var LABOR_PER_JOB = 150;
   var CLOSE_RATE = 0.5;
-  var MATERIAL_COST_SQFT = 0.28;
   var fmt = function (n) { return "$" + Math.round(n).toLocaleString("en-US"); };
   var fmt2 = function (n) { return "$" + n.toFixed(2); };
+
+  /* One shared pricing state: the Startup calculator owns the sliders and toggle, the Reorder
+     calculator reads the same values and re-renders whenever they change. */
+  var pricing = { price: 1.5, roof: 2500, solo: false, listeners: [] };
+  function notifyPricing() { pricing.listeners.forEach(function (fn) { fn(); }); }
 
   function calculator(root, cfg) {
     var pkgs = Array.prototype.slice.call(root.querySelectorAll(".pkg"));
     var price = root.querySelector('[data-role="price"]');
     var roof = root.querySelector('[data-role="roof"]');
     var solo = root.querySelector('[data-role="solo"]');
-    var state = { pkg: cfg.defaultPkg, price: parseFloat(price.value), roof: parseInt(roof.value, 10), solo: false };
+    var state = { pkg: cfg.defaultPkg };
     var q = function (sel) { return root.querySelector(sel); };
 
     pkgs.forEach(function (p, i) {
@@ -78,20 +82,19 @@
       if (dotsEl) { for (var k = 0; k < leads; k++) dotsEl.appendChild(document.createElement("i")); }
       p.addEventListener("click", function () { state.pkg = i; render(); });
     });
-    price.addEventListener("input", function () { state.price = parseFloat(price.value); render(); });
-    roof.addEventListener("input", function () { state.roof = parseInt(roof.value, 10); render(); });
-    solo.addEventListener("click", function () { state.solo = !state.solo; render(); });
+    if (price) price.addEventListener("input", function () { pricing.price = parseFloat(price.value); notifyPricing(); });
+    if (roof) roof.addEventListener("input", function () { pricing.roof = parseInt(roof.value, 10); notifyPricing(); });
+    if (solo) solo.addEventListener("click", function () { pricing.solo = !pricing.solo; notifyPricing(); });
+    pricing.listeners.push(render);
 
     function render() {
       var p = pkgs[state.pkg];
       pkgs.forEach(function (x, i) { x.classList.toggle("is-selected", i === state.pkg); x.setAttribute("aria-pressed", i === state.pkg ? "true" : "false"); });
       var cost = parseInt(p.getAttribute("data-price"), 10);
       var leads = parseInt(p.getAttribute("data-leads"), 10);
-      var gallons = parseInt(p.getAttribute("data-gal"), 10);
-      var sqft = parseInt(p.getAttribute("data-sqft"), 10);
       var jobs = Math.round(leads * CLOSE_RATE);
-      var perJob = state.price * state.roof;
-      var labor = state.solo ? 0 : LABOR_PER_JOB;
+      var perJob = pricing.price * pricing.roof;
+      var labor = pricing.solo ? 0 : LABOR_PER_JOB;
       var netPerJob = perJob - labor;
       var revenue = perJob * jobs;
       var laborTotal = labor * jobs;
@@ -100,11 +103,8 @@
       var remaining = Math.max(0, jobs - recoup);
       var roi = cost > 0 ? (net / cost) * 100 : 0;
 
-      q('[data-out="price"]').textContent = fmt2(state.price);
-      q('[data-out="roof"]').textContent = state.roof.toLocaleString("en-US") + " sq ft";
-      solo.classList.toggle("on", state.solo); solo.setAttribute("aria-checked", state.solo ? "true" : "false");
-      var markup = q('[data-out="markup"]');
-      if (markup) markup.innerHTML = "You pay <b>" + fmt2(MATERIAL_COST_SQFT) + "/sq ft</b> for product · you charge <b>" + fmt2(state.price) + "/sq ft</b> · <span class=\"g\">" + (state.price / MATERIAL_COST_SQFT).toFixed(1) + "x</span> your material cost · " + gallons + " gal covers <b>" + sqft.toLocaleString("en-US") + " sq ft</b>";
+      if (price) { q('[data-out="price"]').textContent = fmt2(pricing.price); q('[data-out="roof"]').textContent = pricing.roof.toLocaleString("en-US") + " sq ft"; }
+      if (solo) { solo.classList.toggle("on", pricing.solo); solo.setAttribute("aria-checked", pricing.solo ? "true" : "false"); }
       q('[data-out="invest"]').textContent = fmt(cost);
       q('[data-out="invest2"]').textContent = fmt(cost);
       q('[data-out="recoup"]').textContent = isFinite(recoup) ? (Math.min(recoup, jobs) + (recoup > jobs ? "+" : "") + (Math.min(recoup, jobs) === 1 ? " job" : " jobs")) : "—";

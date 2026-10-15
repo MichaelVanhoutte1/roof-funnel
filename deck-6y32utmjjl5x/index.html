@@ -143,7 +143,7 @@
 
   <div id="calc-reorder" class="calc-split">
     <h1 class="calc-h">Reorder ROI Calculator</h1>
-    <p class="calc-sub">Your initial investment is recouped. Here's what it costs to keep going.</p>
+    <p class="calc-sub">Your initial investment is recouped. Here's what it costs to keep going — using the pricing and roof size you set above.</p>
     <div class="card"><div class="card-h">1. Choose your reorder package</div><div class="pkgs">
       <button type="button" class="pkg" data-price="15758" data-leads="14" data-gal="40" data-sqft="18000" aria-pressed="false">
       <div class="pkg-tier">Essential</div><div class="pkg-name">Quick Restock</div><div class="pkg-meta">40 gal + 14 leads included</div><div class="pkg-price">$15,758</div>
@@ -155,17 +155,7 @@
       <div class="pkg-tier">Enterprise</div><div class="pkg-name">Full Scale</div><div class="pkg-meta">240 gal + 86 leads included</div><div class="pkg-price">$40,742</div>
       <div class="pkg-leads"></div><div class="pkg-note">86 leads (50% close → 43 jobs)</div></button>
     </div></div>
-    <div class="card"><div class="card-h">💰 Your cost vs your charge per sq ft</div>
-    <div class="row"><label for="re-price">What you charge per sq ft</label><output data-out="price">$1.50</output></div>
-    <input class="range" type="range" id="re-price" data-role="price" min="0.5" max="3" step="0.05" value="1.5">
-    <div class="ticks"><span>$0.50 commercial</span><span>$1.50 avg</span><span>$3.00 premium</span></div>
-    <div class="row"><label for="re-roof">Average roof size</label><output data-out="roof">2,500 sq ft</output></div>
-    <input class="range" type="range" id="re-roof" data-role="roof" min="1500" max="4000" step="100" value="2500">
-    <div class="ticks"><span>1,500 small</span><span>2,500 avg</span><span>4,000 large</span></div>
-    <div class="toggle"><span>🧍 Solo operator (zero labor cost)</span><button type="button" class="switch" data-role="solo" role="switch" aria-checked="false" aria-label="Solo operator"></button></div>
-    <div class="cost-line" data-out="markup"></div>
-  </div>
-    <div class="card hl"><div class="card-h">2. 🎯 Jobs to recoup this reorder</div>
+        <div class="card hl"><div class="card-h">2. 🎯 Jobs to recoup this reorder</div>
     <div class="duo"><div class="stat red"><div class="stat-l">You invest</div><div class="stat-v" data-out="invest">$35,000</div></div><div class="arrow">→</div><div class="stat green"><div class="stat-l">Recoup after</div><div class="stat-v" data-out="recoup">9 jobs</div></div></div>
     <div class="note" data-out="remaining"></div>
     <div class="be"><div class="be-l"><span>Breakeven</span><span data-out="be-label"></span></div><div class="be-bar"><div class="be-fill" data-out="be-fill"></div></div></div>
