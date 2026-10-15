@@ -141,3 +141,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .slide:not(.calc){scrollbar-width:none}
 .slide:not(.calc)::-webkit-scrollbar{display:none}
 .slide.calc .slide-inner{padding-bottom:80px}
+
+/* lightbox: click any media tile or proof screenshot to enlarge */
+.media,.proof img{cursor:zoom-in}
+.lb{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:32px;background:rgba(0,0,0,.9);backdrop-filter:blur(6px)}
+.lb.is-open{display:flex;animation:fade .2s ease both}
+.lb img{max-width:min(96vw,1400px);max-height:92vh;width:auto;height:auto;border-radius:12px;box-shadow:0 20px 80px rgba(0,0,0,.6);cursor:zoom-out}
+.lb .lb-ph{width:min(96vw,1100px);aspect-ratio:16/9;border-radius:12px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#5f7282;font-size:16px;letter-spacing:.06em;text-transform:uppercase;text-align:center;padding:24px}
+.lb-close{position:absolute;top:18px;right:20px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;transition:background .15s}
+.lb-close:hover{background:rgba(255,255,255,.18)}
+.lb-close svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round}

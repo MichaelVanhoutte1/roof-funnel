@@ -1,5 +1,31 @@
 (function () {
   "use strict";
+  /* ---------- lightbox ---------- */
+  var lightbox = document.getElementById("lightbox");
+  var lbBody = document.getElementById("lb-body");
+  function openLightbox(tile) {
+    lbBody.innerHTML = "";
+    var img = tile.tagName === "IMG" ? tile : tile.querySelector("img");
+    if (img) {
+      var big = document.createElement("img");
+      big.src = img.currentSrc || img.src; big.alt = img.alt || "";
+      lbBody.appendChild(big);
+    } else {
+      var ph = document.createElement("div");
+      ph.className = "lb-ph";
+      ph.textContent = tile.getAttribute("data-label") || "";
+      lbBody.appendChild(ph);
+    }
+    lightbox.classList.add("is-open");
+  }
+  function closeLightbox() { lightbox.classList.remove("is-open"); lbBody.innerHTML = ""; }
+  document.addEventListener("click", function (e) {
+    var tile = e.target.closest(".media, .proof img");
+    if (tile && !tile.querySelector("iframe, video")) { e.preventDefault(); openLightbox(tile); return; }
+    if (e.target.closest("#lb-close") || (e.target === lightbox) || e.target.closest("#lb-body")) closeLightbox();
+  });
+  document.getElementById("lb-close").addEventListener("click", closeLightbox);
+
   /* ---------- slide navigation ---------- */
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
   var titles = slides.map(function (s) { return s.getAttribute("data-title") || ""; });
@@ -20,6 +46,7 @@
   prev.addEventListener("click", function () { go(current - 1); });
   next.addEventListener("click", function () { go(current + 1); });
   document.addEventListener("keydown", function (e) {
+    if (lightbox.classList.contains("is-open")) { if (e.key === "Escape") closeLightbox(); return; }
     if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(current + 1); }
     if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(current - 1); }
