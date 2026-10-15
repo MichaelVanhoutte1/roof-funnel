@@ -97,7 +97,6 @@
 
       if (price) { q('[data-out="price"]').textContent = fmt2(pricing.price); q('[data-out="roof"]').textContent = pricing.roof.toLocaleString("en-US") + " sq ft"; }
       q('[data-out="invest"]').textContent = fmt(cost);
-      q('[data-out="invest2"]').textContent = fmt(cost);
       q('[data-out="recoup"]').textContent = isFinite(recoup) ? (Math.min(recoup, jobs) + (recoup > jobs ? "+" : "") + (Math.min(recoup, jobs) === 1 ? " job" : " jobs")) : "—";
       q('[data-out="remaining"]').innerHTML = recoup <= jobs
         ? "Remaining " + remaining + (remaining === 1 ? " job" : " jobs") + " = <b>" + fmt(remaining * netPerJob) + "</b> net profit ✅"
