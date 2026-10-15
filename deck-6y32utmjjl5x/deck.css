@@ -85,7 +85,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .card{margin-top:22px;background:var(--calc-panel);border:1px solid var(--calc-line);border-radius:16px;padding:24px}
 .card.hl{border-color:rgba(52,165,203,.45);box-shadow:0 0 0 1px rgba(52,165,203,.15),0 0 40px rgba(52,165,203,.08)}
 .card-h{font-family:'Montserrat',sans-serif;font-weight:800;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-bottom:18px}
-.pkgs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.pkgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 @media(max-width:760px){.pkgs{grid-template-columns:1fr}}
 .pkg{text-align:center;padding:22px 14px 24px;border-radius:14px;border:1px solid var(--calc-line);background:#070707;transition:border-color .15s,box-shadow .15s,background .15s}
 .pkg:hover{border-color:#2d5b6b}
