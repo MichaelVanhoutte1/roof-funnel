@@ -27,11 +27,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .deck-h{font-family:'Montserrat',sans-serif;font-weight:900;font-size:38px;letter-spacing:.06em;text-align:center;text-transform:uppercase;line-height:1.15}
 .deck-sub{margin-top:10px;text-align:center;color:var(--muted);font-size:18px}
 @media(max-width:640px){.deck-h{font-size:26px}.deck-sub{font-size:15px}}
-.pillar{display:flex;align-items:center;gap:14px;margin-top:36px}
+.pillar{display:flex;align-items:center;gap:14px;margin-top:4px}
 .pillar-check{flex:0 0 44px;width:44px;height:44px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px var(--green-dim)}
 .pillar-check svg{width:22px;height:22px;fill:none;stroke:#07240f;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
-.pillar h2{font-family:'Montserrat',sans-serif;font-weight:800;font-size:30px;letter-spacing:.05em;text-transform:uppercase}
-@media(max-width:640px){.pillar h2{font-size:20px}}
+.pillar h1{font-family:'Montserrat',sans-serif;font-weight:800;font-size:30px;letter-spacing:.05em;text-transform:uppercase}
+@media(max-width:640px){.pillar h1{font-size:20px}}
 .goal{margin:12px 0 0 58px;color:var(--muted);font-size:18px}
 .goal b{color:#fff;font-weight:600}
 @media(max-width:640px){.goal{margin-left:0}}
@@ -132,7 +132,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .bd-row{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--calc-line);font-size:14.5px;color:#ddd}
 .bd-row .neg{color:#f26b6b;font-weight:600}.bd-row .pos{color:#4ade80;font-weight:600}
 .bd-row.total{border-bottom:0;font-family:'Montserrat',sans-serif;font-weight:800;color:#4ade80;font-size:15px;padding-top:18px}
-.calc-split{margin:56px 0 0;padding-top:40px;border-top:1px solid var(--calc-line)}
+.calc-split{margin:120px 0 0;padding-top:72px;border-top:1px solid var(--calc-line)}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media(max-width:640px){.list{font-size:16px}.goal{font-size:15px}.outcome{font-size:15px}.col-h{font-size:13px}}

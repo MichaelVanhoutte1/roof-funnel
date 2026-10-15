@@ -6,21 +6,12 @@
   var counter = document.getElementById("counter");
   var prev = document.getElementById("prev");
   var next = document.getElementById("next");
-  var dots = document.getElementById("dots");
   var current = 0;
-
-  slides.forEach(function (_, i) {
-    var b = document.createElement("button");
-    b.type = "button"; b.setAttribute("aria-label", "Go to slide " + (i + 1));
-    b.addEventListener("click", function () { go(i); });
-    dots.appendChild(b);
-  });
 
   function go(i, fromHash) {
     i = Math.max(0, Math.min(slides.length - 1, i));
     current = i;
     slides.forEach(function (s, k) { s.classList.toggle("is-active", k === i); if (k === i) s.scrollTop = 0; });
-    Array.prototype.forEach.call(dots.children, function (d, k) { d.classList.toggle("is-active", k === i); });
     counter.textContent = (i + 1) + " / " + slides.length;
     document.title = "OnyaRoof Dealer Program · " + titles[i].replace(/&amp;/g, "&");
     prev.disabled = i === 0; next.disabled = i === slides.length - 1;
