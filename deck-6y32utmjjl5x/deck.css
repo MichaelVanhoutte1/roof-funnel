@@ -20,8 +20,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .slide{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain;display:none;animation:fade .28s ease both}
 .slide.is-active{display:block}
 @keyframes fade{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
-.slide-inner{max-width:1040px;margin:0 auto;padding:40px 24px 80px}
-@media(max-width:640px){.slide-inner{padding:28px 16px 72px}}
+.slide-inner{max-width:1040px;margin:0 auto;padding:32px 24px 32px}
+@media(max-width:640px){.slide-inner{padding:24px 16px 32px}}
 
 /* pillar slides */
 .deck-h{font-family:'Montserrat',sans-serif;font-weight:900;font-size:38px;letter-spacing:.06em;text-align:center;text-transform:uppercase;line-height:1.15}
@@ -47,7 +47,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .list .dot svg{width:11px;height:11px;fill:none;stroke:#07240f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
 .outcome{margin-top:32px;border-left:4px solid var(--green);background:var(--panel);border-radius:0 12px 12px 0;padding:18px 20px;font-size:18px;line-height:1.5;color:#cfd8e0}
 .outcome b{color:var(--green);font-weight:700}
-.extra{margin-top:36px;padding-top:24px;border-top:1px solid var(--line);max-width:680px;margin-left:auto;margin-right:auto}
+.extra{margin-top:28px;padding-top:20px;border-top:1px solid var(--line);max-width:680px;margin-left:auto;margin-right:auto}
 .extra-h{font-family:'Montserrat',sans-serif;font-weight:800;font-size:12px;text-align:center;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px}
 .media{position:relative;width:100%;padding-top:56.25%;border-radius:12px;overflow:hidden;background:var(--panel2);border:1px solid var(--line)}
 .media img,.media iframe,.media video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:0}
@@ -136,3 +136,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media(max-width:640px){.list{font-size:16px}.goal{font-size:15px}.outcome{font-size:15px}.col-h{font-size:13px}}
+
+/* Pillar and results slides: scroll still works, but no scrollbar flashes in for a few px of overflow. The calculator slide keeps its scrollbar. */
+.slide:not(.calc){scrollbar-width:none}
+.slide:not(.calc)::-webkit-scrollbar{display:none}
+.slide.calc .slide-inner{padding-bottom:80px}
