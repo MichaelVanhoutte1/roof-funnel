@@ -161,3 +161,5 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 .media-sm{max-width:520px;margin:0 auto}
 .media-sm img{object-fit:cover;object-position:top}
+
+.media-wide{padding-top:50%;max-width:640px;margin:0 auto}
