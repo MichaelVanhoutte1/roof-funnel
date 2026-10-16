@@ -8,15 +8,15 @@ import parsePhoneNumberFromString, { type CountryCode, type PhoneNumber } from "
 
 const US_CANADA_COUNTRIES = new Set<CountryCode>(["US", "CA", "PR", "VI", "GU", "MP", "AS"]);
 
-export const TIMELINE_OPTIONS = ["Right Away!", "Within 30 Days", "More Than 30 Days"] as const;
+export const TIMELINE_OPTIONS = ["Right away", "Within 30 days", "More than 30 days"] as const;
 export const BUSINESS_OWNER_OPTIONS = ["I own a business", "I want to start one"] as const;
 export const CAPITAL_OPTIONS = [
-  "Yes - I have $20,000+ available right now",
-  "Yes - I will use financing",
-  "No - I do not qualify to book a call",
+  "Yes, I have $20,000+ available right now.",
+  "Yes, I will use financing.",
+  "No, I do not qualify to book a call.",
 ] as const;
 /** The one answer that routes to "not a fit" instead of the calendar. */
-export const CAPITAL_DQ_VALUE: (typeof CAPITAL_OPTIONS)[number] = "No - I do not qualify to book a call";
+export const CAPITAL_DQ_VALUE: (typeof CAPITAL_OPTIONS)[number] = "No, I do not qualify to book a call.";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 

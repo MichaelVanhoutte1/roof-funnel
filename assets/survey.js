@@ -17,20 +17,20 @@
   var HONEYPOT_FIELD = "contact_fax";
 
   var STEPS = [
+    { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
     { key: "timeline", type: "choice", q: "How soon are you planning to become a dealer/applicator in your city?",
-      options: ["Right Away!", "Within 30 Days", "More Than 30 Days"], aria: "Timeline" },
+      options: ["Right away", "Within 30 days", "More than 30 days"], aria: "Timeline" },
     { key: "business_owner", type: "choice", q: "Are you currently a business owner or looking to start one?",
       options: ["I own a business", "I want to start one"], aria: "Business owner" },
     { key: "capital", type: "choice",
       q: "To launch a roof rejuvenation business properly, you must have a minimum of $20,000 in accessible capital. Do you currently have this available?",
-      options: ["Yes - I have $20,000+ available right now", "Yes - I will use financing", "No - I do not qualify to book a call"], aria: "Capital" },
-    { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
-    { key: "phone", type: "tel", q: "What is your PERSONAL phone number?", placeholder: "(555) 123-4567", autocomplete: "tel-national", aria: "Your mobile phone" },
+      options: ["Yes, I have $20,000+ available right now.", "Yes, I will use financing.", "No, I do not qualify to book a call."], aria: "Capital" },
+    { key: "name", type: "text", q: "What is your full name?", placeholder: "First and last name", autocomplete: "name", aria: "Your name" },
     { key: "email", type: "email", q: "What is your email?", placeholder: "you@example.com", autocomplete: "email", aria: "Your email" },
-    { key: "name", type: "text", q: "What is your full name?", placeholder: "First and last name", autocomplete: "name", aria: "Your name", submit: true },
+    { key: "phone", type: "tel", q: "What is your personal phone number?", placeholder: "(555) 123-4567", autocomplete: "tel-national", aria: "Your mobile phone", submit: true },
   ];
   var TOTAL = STEPS.length;
-  var PHONE_STEP = 4;
+  var PHONE_STEP = 6;
   var ENDOWED_PROGRESS = [50, 60, 70, 78, 86, 92, 98];
   var AUTO_ADVANCE_MS = 250;
   var SURVEY_ABANDON_MS = 300000;
@@ -354,17 +354,17 @@
       if (c.city.length < 2) { setError("city", "Please enter your city."); return; }
       setError("city", ""); goTo(state.step + 1); focusStep(state.step); return;
     }
-    if (s.key === "phone") {
-      if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }
-      setError("phone", ""); goTo(state.step + 1); focusStep(state.step); return;
+    if (s.key === "name") {
+      if (!c.name) { setError("name", "Please enter your full name"); return; }
+      setError("name", ""); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "email") {
       if (!isValidEmail(c.email)) { setError("email", "Please enter a valid email address"); return; }
       setError("email", ""); goTo(state.step + 1); focusStep(state.step); return;
     }
-    if (s.key === "name") {
-      if (!c.name) { setError("name", "Please enter your full name"); return; }
-      setError("name", ""); submitSurvey(); return;
+    if (s.key === "phone") {
+      if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }
+      setError("phone", ""); submitSurvey(); return;
     }
   });
 
@@ -390,15 +390,14 @@
         if (!r.res.ok) {
           var msg = typeof r.data.error === "string" ? r.data.error
             : r.res.status === 429 ? "Too many submissions. Please wait a moment and try again." : "Something went wrong. Please try again.";
-          if (/phone|10-digit/i.test(msg)) { setError("phone", msg); goTo(PHONE_STEP); }
-          else setError("name", msg);
+          setError("phone", msg);
           return;
         }
         fullSent = true; clearAbandonTimer();
         if (r.data.silent || r.data.route === "dq" || !CALENDAR_URL) showPanel(r.data.silent ? "thanks" : r.data.route === "dq" ? "dq" : "thanks", c);
         else showCalendar(c);
       })
-      .catch(function () { setError("name", "Something went wrong. Please try again."); })
+      .catch(function () { setError("phone", "Something went wrong. Please try again."); })
       .then(function () { setSubmitting(false); });
   }
 

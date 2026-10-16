@@ -9,9 +9,9 @@ import {
 } from "../src/validation.ts";
 
 const good = {
-  timeline: "Right Away!",
+  timeline: "Right away",
   business_owner: "I own a business",
-  capital: "Yes - I have $20,000+ available right now",
+  capital: "Yes, I have $20,000+ available right now.",
   city: "Tampa, FL",
   name: "Marcus Thompson",
   phone: "(813) 462-7731",
@@ -23,7 +23,7 @@ test("a real-looking lead processes", () => {
 });
 
 test("the DQ capital answer still processes (routing decides, not the gate)", () => {
-  assert.deepEqual(classifyFullSubmission({ ...good, capital: "No - I do not qualify to book a call" }), { outcome: "process" });
+  assert.deepEqual(classifyFullSubmission({ ...good, capital: "No, I do not qualify to book a call." }), { outcome: "process" });
 });
 
 test("unknown option values are rejected with a message", () => {
