@@ -78,3 +78,9 @@
 
 /* the page wraps the survey in a dark card; the survey itself is white */
 .typeform-container{background:#fff!important;border-color:#e2e8f0!important}
+
+/* typing steps: on desktop the field, its error, button and hint sit in a centred 70% column */
+@media(min-width:760px){
+  .sv-field,.sv-error,.sv-cta,.sv-hint{width:70%;margin-left:auto;margin-right:auto;display:block}
+  .sv-error:empty{display:none}
+}
