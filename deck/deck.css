@@ -167,3 +167,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* tiles that hold a ~1:1 image show the whole image instead of a 16:9 crop */
 .media-square{padding-top:99.4%}
 .media-square img{object-fit:contain}
+
+.media-fit{background:#0b1218}
+.media-fit img{object-fit:contain}
