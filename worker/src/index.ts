@@ -415,7 +415,7 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
 
 /* ---------------- step webhooks (Cortana) ---------------- */
 
-const EVENT_FIELDS = ["session_id", "city", "timeline", "business_owner", "capital", "name", "email", "phone"] as const;
+const EVENT_FIELDS = ["session_id", "city", "timeline", "business_owner", "capital", "name", "email", "phone", "question_key", "question", "answer"] as const;
 const EVENT_NAMES = new Set(["q1", "q2", "q3", "q4", "q5", "q6", "email", "phone", "qualified"]);
 
 function webhookMap(env: Env): Record<string, string> {
@@ -477,7 +477,7 @@ async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): P
   const country = clientCountry(request);
   if (!countryAllowed(country, env)) return json({ ok: true, silent: true }, 200, cors);
   const fields: Record<string, unknown> = {};
-  for (const k of EVENT_FIELDS) { const v = str(raw[k], k === "email" ? 254 : 120); if (v) fields[k] = v; }
+  for (const k of EVENT_FIELDS) { const v = str(raw[k], k === "email" ? 254 : k === "question" ? 300 : 120); if (v) fields[k] = v; }
   if (typeof fields.phone === "string") { const d = normalizePhoneDigits10(fields.phone); if (d) fields.phone = `+1${d}`; else delete fields.phone; }
   if (typeof fields.email === "string" && !isValidEmail(fields.email)) delete fields.email;
   if (event === "qualified") fields.qualified = true;

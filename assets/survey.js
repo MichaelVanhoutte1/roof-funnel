@@ -275,8 +275,8 @@
     if (state.advancing) return;
     state.answers[key] = value;
     mirrors[key].value = value;
-    trackEvent(STEP_EVENTS[key], STEP_EVENTS[key]);
-    if (key === "capital" && /^Yes/.test(value)) trackEvent("qualified", "qualified");
+    trackStep(key, value);
+    if (key === "capital" && /^Yes/.test(value)) trackEvent("qualified", "qualified", { question_key: key, question: questionText(key), answer: value });
     refs.choices[key].forEach(function (b) { b.classList.toggle("is-selected", b.textContent === value); });
     state.advancing = true;
     refs.choices[key].forEach(function (b) { b.disabled = true; });
@@ -350,17 +350,24 @@
 
   /* ---------------- step webhooks (relayed by the API) ---------------- */
   var sentEvents = {};
-  function trackEvent(event, once) {
+  function trackEvent(event, once, extra) {
     if (PREVIEW || !API) return;
     if (once && sentEvents[once]) return;
     if (once) sentEvents[once] = true;
     var body = payloadBase();
     body.event = event;
+    if (extra) { Object.keys(extra).forEach(function (k) { body[k] = extra[k]; }); }
     try {
       fetch(API + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(function () {});
     } catch (e) {}
   }
   var STEP_EVENTS = { city: "q1", timeline: "q2", business_owner: "q3", capital: "q4", name: "q5", email: "q6" };
+  function questionText(key) { for (var i = 0; i < STEPS.length; i++) if (STEPS[i].key === key) return STEPS[i].q; return ""; }
+  /** One webhook per step; a changed answer (Back, then a different pick) fires it again with the new value. */
+  function trackStep(key, value) {
+    var ev = STEP_EVENTS[key];
+    trackEvent(ev, ev + ":" + String(value).toLowerCase(), { question_key: key, question: questionText(key), answer: value });
+  }
 
   /* Email: captured as soon as a valid address settles, even if Continue is never pressed. */
   var emailTimer = null;
@@ -368,7 +375,7 @@
     var v = (refs.inputs.email.value || "").trim();
     if (!isValidEmail(v)) return;
     clearTimeout(emailTimer);
-    var fire = function () { trackEvent("email", "email:" + v.toLowerCase()); };
+    var fire = function () { trackEvent("email", "email:" + v.toLowerCase(), { question_key: "email", question: questionText("email"), answer: v }); };
     if (immediate) fire(); else emailTimer = setTimeout(fire, 2500);
   }
   refs.inputs.email.addEventListener("input", function () { captureEmail(false); });
@@ -390,15 +397,15 @@
     var c = readContact();
     if (s.key === "city") {
       if (c.city.length < 2) { setError("city", "Please enter your city."); return; }
-      setError("city", ""); trackEvent("q1", "q1"); goTo(state.step + 1); focusStep(state.step); return;
+      setError("city", ""); trackStep("city", c.city); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "name") {
       if (!c.name) { setError("name", "Please enter your full name"); return; }
-      setError("name", ""); trackEvent("q5", "q5"); goTo(state.step + 1); focusStep(state.step); return;
+      setError("name", ""); trackStep("name", c.name); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "email") {
       if (!isValidEmail(c.email)) { setError("email", "Please enter a valid email address"); return; }
-      setError("email", ""); captureEmail(true); trackEvent("q6", "q6"); goTo(state.step + 1); focusStep(state.step); return;
+      setError("email", ""); captureEmail(true); trackStep("email", c.email); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "phone") {
       if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }
