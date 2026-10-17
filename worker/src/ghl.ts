@@ -102,14 +102,16 @@ export type ContactsConfig = { token: string; locationId: string };
 
 /** Custom fields the funnel writes; created on first use if the sub-account lacks them. */
 export const SURVEY_FIELDS = [
-  { key: "timeline", name: "Survey: Timeline" },
-  { key: "business_owner", name: "Survey: Business Owner" },
-  { key: "capital", name: "Survey: Capital" },
-  { key: "qualified", name: "Survey: Qualified" },
-  { key: "city", name: "Survey: City" },
+  { key: "timeline", name: "Timeline" },
+  { key: "business_owner", name: "Is Business Owner" },
+  { key: "capital", name: "Capital" },
+  { key: "city", name: "City Location" },
+  { key: "qualified", name: "Qualified" },
 ] as const;
 
 let fieldIdCache: { locationId: string; ids: Record<string, string> } | null = null;
+/** Single-flight: concurrent upserts share one lookup/creation pass so fields are never created twice. */
+let fieldLookup: Promise<Record<string, string>> | null = null;
 
 async function listCustomFields(cfg: ContactsConfig): Promise<Array<{ id: string; name: string }>> {
   const data = await ghl<{ customFields?: Array<{ id: string; name: string }> }>(cfg as GhlConfig, `/locations/${cfg.locationId}/customFields?model=contact`);
@@ -119,6 +121,12 @@ async function listCustomFields(cfg: ContactsConfig): Promise<Array<{ id: string
 /** Resolve (and if needed create) the survey custom fields; returns key → field id. */
 export async function ensureSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
   if (fieldIdCache && fieldIdCache.locationId === cfg.locationId && Object.keys(fieldIdCache.ids).length === SURVEY_FIELDS.length) return fieldIdCache.ids;
+  if (fieldLookup) return fieldLookup;
+  fieldLookup = resolveSurveyFields(cfg).finally(() => { fieldLookup = null; });
+  return fieldLookup;
+}
+
+async function resolveSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
   const existing = await listCustomFields(cfg);
   const ids: Record<string, string> = {};
   for (const f of SURVEY_FIELDS) {

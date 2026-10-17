@@ -45,6 +45,8 @@ export interface Env {
   GHL_CALENDAR_ID?: string;
   /** Shown as the appointment title and on the thank-you page. */
   APPOINTMENT_TITLE?: string;
+  /** "off" disables the pre-booking contact sync (email capture + lead save → GHL contact). */
+  GHL_CONTACT_SYNC?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
@@ -423,6 +425,8 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
 /* ---------------- GHL contact sync (email first, phone when it arrives) ---------------- */
 
 function contactsConfig(env: Env): ContactsConfig | null {
+  // GHL_CONTACT_SYNC = "off": Cortana owns contact creation; the funnel only writes the contact at booking time.
+  if ((env.GHL_CONTACT_SYNC ?? "").toLowerCase() === "off") return null;
   if (!env.GHL_PIT || !env.GHL_LOCATION_ID) return null;
   return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID };
 }
