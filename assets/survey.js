@@ -276,7 +276,6 @@
     state.answers[key] = value;
     mirrors[key].value = value;
     trackStep(key, value);
-    if (key === "capital" && /^Yes/.test(value)) trackEvent("qualified", "qualified", { question_key: key, question: questionText(key), answer: value });
     refs.choices[key].forEach(function (b) { b.classList.toggle("is-selected", b.textContent === value); });
     state.advancing = true;
     refs.choices[key].forEach(function (b) { b.disabled = true; });
@@ -361,7 +360,7 @@
       fetch(API + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(function () {});
     } catch (e) {}
   }
-  var STEP_EVENTS = { city: "q1", timeline: "q2", business_owner: "q3", capital: "q4", name: "q5", email: "q6" };
+  var STEP_EVENTS = { city: "q1", timeline: "q2", business_owner: "q3", capital: "q4", name: "q5" };
   function questionText(key) { for (var i = 0; i < STEPS.length; i++) if (STEPS[i].key === key) return STEPS[i].q; return ""; }
   /** One webhook per step; a changed answer (Back, then a different pick) fires it again with the new value. */
   function trackStep(key, value) {
@@ -375,11 +374,29 @@
     var v = (refs.inputs.email.value || "").trim();
     if (!isValidEmail(v)) return;
     clearTimeout(emailTimer);
-    var fire = function () { trackEvent("email", "email:" + v.toLowerCase(), { question_key: "email", question: questionText("email"), answer: v }); };
+    var fire = function () {
+      trackEvent("email", "email:" + v.toLowerCase(), { question_key: "email", question: questionText("email"), answer: v });
+      /* Qualified (Yes on capital + an email) is sent by the API together with the phone when the lead is stored.
+         If the phone never comes, the fallback below sends it with just the email and the answers. */
+      if (/^Yes/.test(state.answers.capital || "")) armQualifiedFallback();
+    };
     if (immediate) fire(); else emailTimer = setTimeout(fire, 2500);
   }
   refs.inputs.email.addEventListener("input", function () { captureEmail(false); });
   refs.inputs.email.addEventListener("blur", function () { captureEmail(true); });
+  /* Qualified fallback: no phone captured within the abandonment window, or the visitor leaves → send with the email. */
+  var qualifiedTimer = null, qualifiedFired = false;
+  function fireQualifiedWithEmail() {
+    if (qualifiedFired || partialSent || fullSent) return;
+    if (phoneE164(nationalDigits(refs.inputs.phone.value || ""))) return; // a phone exists: the lead save carries it instead
+    var v = (refs.inputs.email.value || "").trim();
+    if (!isValidEmail(v) || !/^Yes/.test(state.answers.capital || "")) return;
+    qualifiedFired = true;
+    trackEvent("qualified", "qualified:" + v.toLowerCase(), { question_key: "capital", question: questionText("capital"), answer: state.answers.capital, qualified: true });
+  }
+  function armQualifiedFallback() { clearTimeout(qualifiedTimer); qualifiedTimer = setTimeout(fireQualifiedWithEmail, SURVEY_ABANDON_MS); }
+  window.addEventListener("pagehide", fireQualifiedWithEmail);
+
   /* Phone: a valid number left idle is banked as a partial lead (the API fires the phone webhook). */
   var phoneIdle = null;
   refs.inputs.phone.addEventListener("input", function () {
@@ -405,7 +422,7 @@
     }
     if (s.key === "email") {
       if (!isValidEmail(c.email)) { setError("email", "Please enter a valid email address"); return; }
-      setError("email", ""); captureEmail(true); trackStep("email", c.email); goTo(state.step + 1); focusStep(state.step); return;
+      setError("email", ""); captureEmail(true); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "phone") {
       if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }

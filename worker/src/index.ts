@@ -386,11 +386,14 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", route, "country:", country);
   ctx.waitUntil(pushToGhl(env, row));
-  ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", {
+  const leadFields = {
     lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
-    capital: row.capital, name: row.name, email: row.email, phone: row.phone,
-    survey_partial: partial, ...(qualified == null ? {} : { qualified }),
-  }, tracking, country)));
+    capital: row.capital, name: row.name, email: row.email, phone: row.phone, survey_partial: partial,
+  };
+  const qualifiedAnswer = /^Yes/.test(row.capital ?? "");
+  ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", { ...leadFields, qualified: qualifiedAnswer }, tracking, country)));
+  // Qualified = Yes on capital + at least an email; fired once per lead, preferably now that the phone is here.
+  if (qualifiedAnswer && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
   return json({ ok: true, lead_id: row.id, route, qualified }, 200, cors);
@@ -416,7 +419,7 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
 /* ---------------- step webhooks (Cortana) ---------------- */
 
 const EVENT_FIELDS = ["session_id", "city", "timeline", "business_owner", "capital", "name", "email", "phone", "question_key", "question", "answer"] as const;
-const EVENT_NAMES = new Set(["q1", "q2", "q3", "q4", "q5", "q6", "email", "phone", "qualified"]);
+const EVENT_NAMES = new Set(["q1", "q2", "q3", "q4", "q5", "email", "phone", "qualified"]);
 
 function webhookMap(env: Env): Record<string, string> {
   try {
@@ -458,6 +461,14 @@ async function relayEvent(env: Env, event: string, payload: Record<string, unkno
   }
 }
 
+async function sendQualifiedOnce(env: Env, leadId: number, payload: Record<string, unknown>): Promise<void> {
+  const res = await env.DB.prepare(
+    "UPDATE leads SET qualified_sent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?1 AND qualified_sent_at IS NULL",
+  ).bind(leadId).run();
+  if ((res.meta.changes ?? 0) === 0) return; // already sent for this lead
+  await relayEvent(env, "qualified", payload);
+}
+
 /** POST /event { event, session_id, city?, timeline?, …, tracking? } → relayed to the matching webhook. */
 async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const cors = corsHeaders(request, env);
@@ -480,7 +491,11 @@ async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): P
   for (const k of EVENT_FIELDS) { const v = str(raw[k], k === "email" ? 254 : k === "question" ? 300 : 120); if (v) fields[k] = v; }
   if (typeof fields.phone === "string") { const d = normalizePhoneDigits10(fields.phone); if (d) fields.phone = `+1${d}`; else delete fields.phone; }
   if (typeof fields.email === "string" && !isValidEmail(fields.email)) delete fields.email;
-  if (event === "qualified") fields.qualified = true;
+  if (event === "qualified") {
+    // Qualified needs a Yes on the capital question and at least an email on file.
+    if (!/^Yes/.test(String(fields.capital ?? "")) || !fields.email) return json({ ok: true, silent: true }, 200, cors);
+    fields.qualified = true;
+  }
   const payload = eventPayload(event, fields, pickTracking(raw.tracking), country);
   ctx.waitUntil(relayEvent(env, event, payload));
   return json({ ok: true }, 202, cors);
