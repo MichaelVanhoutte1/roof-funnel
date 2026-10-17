@@ -164,8 +164,11 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 }
 
 /* Hero */
-.hero{padding:28px 0 0;text-align:center}
-@media(max-width:600px){.hero{padding:16px 0 0}}
+.hero{padding:14px 0 0;text-align:center}
+@media(max-width:600px){.hero{padding:10px 0 0}}
+/* the page-builder shell added 30px above the hero; trim it */
+.hl_page-preview--content .section-qqz_SPqT9d{padding-top:0}
+.hl_page-preview--content .row-RVwdkY-As_{padding-top:0}
 .hero-logo{text-align:center;margin:0 0 6px;line-height:0}
 .hero-logo img{height:104px;width:auto;display:inline-block}
 @media(max-width:600px){.hero-logo{display:none}}
@@ -281,10 +284,14 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 /* Sticky CTA */
 .sticky-cta{position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.95);backdrop-filter:blur(12px);border-top:1px solid #1c1c1c;padding:14px 24px;z-index:1000;display:flex;align-items:center;justify-content:center;transform:translateY(100%);transition:transform .3s ease}
 .sticky-cta.visible{transform:translateY(0)}
-.sticky-btn{display:inline-flex;flex-direction:column;align-items:center;gap:2px;background:var(--primary);color:#fff;padding:12px 40px;border-radius:8px;text-decoration:none;border:none;cursor:pointer;transition:all .15s}
-.sticky-btn:hover{background:var(--dark);transform:translateY(-1px)}
-.sticky-btn .sb-main{font-size:15px;font-weight:700}
-.sticky-btn .sb-sub{font-size:11px;font-weight:400;opacity:0.8}
+.sticky-btn{display:inline-flex;flex-direction:column;align-items:center;gap:3px;background:var(--primary);color:#fff;padding:16px 56px;border-radius:12px;text-decoration:none;border:2px solid rgba(255,255,255,.18);cursor:pointer;transition:transform .15s,background .15s;animation:sticky-pulse 2s ease-in-out infinite;max-width:100%}
+.sticky-btn:hover{background:var(--light);transform:translateY(-2px) scale(1.02);animation:none;box-shadow:0 10px 36px rgba(52,165,203,.6)}
+.sticky-btn .sb-main{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:800;letter-spacing:.01em;line-height:1.2;text-align:center}
+.sticky-btn .sb-main::after{content:" →"}
+.sticky-btn .sb-sub{font-size:12.5px;font-weight:500;opacity:0.9;text-align:center}
+@keyframes sticky-pulse{0%,100%{box-shadow:0 6px 20px rgba(52,165,203,.35),0 0 0 0 rgba(52,165,203,.55)}50%{box-shadow:0 10px 32px rgba(52,165,203,.55),0 0 0 12px rgba(52,165,203,0)}}
+@media(max-width:600px){.sticky-cta{padding:12px 14px}.sticky-btn{width:100%;padding:14px 16px}.sticky-btn .sb-main{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.sticky-btn{animation:none}}
 
 /* Footer */
 .footer{padding:40px 0 80px;text-align:center;border-top:1px solid #1a1a1a}
@@ -490,7 +497,7 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 
 <div class="sticky-cta visible" id="stickyCta">
   <a href="#" class="sticky-btn" onclick="document.querySelector('.typeform-container').scrollIntoView({behavior:'smooth'});return false;">
-    <span class="sb-main">See If Your Market Area Is Still Available</span>
+    <span class="sb-main">See If Your Market Is Still Available</span>
     <span class="sb-sub">Fill out the survey to check availability now</span>
   </a>
 </div>
