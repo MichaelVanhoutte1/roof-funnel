@@ -382,6 +382,7 @@
     clearTimeout(emailTimer);
     var fire = function () {
       trackEvent("email", "email:" + v.toLowerCase(), { question_key: "email", question: questionText("email"), answer: v });
+      saveEmailContact(v);
       /* Qualified (Yes on capital + an email) is sent by the API together with the phone when the lead is stored.
          If the phone never comes, the fallback below sends it with just the email and the answers. */
       if (/^Yes/.test(state.answers.capital || "")) armQualifiedFallback();
@@ -390,6 +391,15 @@
   }
   refs.inputs.email.addEventListener("input", function () { captureEmail(false); });
   refs.inputs.email.addEventListener("blur", function () { captureEmail(true); });
+  /* Email-only contact: created in the CRM as soon as a valid email settles; the phone upgrades it later. */
+  var emailContacts = {};
+  function saveEmailContact(v) {
+    if (PREVIEW || !API) return;
+    var k = v.toLowerCase(); if (emailContacts[k]) return; emailContacts[k] = true;
+    var body = payloadBase(); body.email = v;
+    try { fetch(API + "/contact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(function () {}); } catch (e) {}
+  }
+
   /* Qualified fallback: no phone captured within the abandonment window, or the visitor leaves → send with the email. */
   var qualifiedTimer = null, qualifiedFired = false;
   function fireQualifiedWithEmail() {

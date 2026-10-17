@@ -14,13 +14,16 @@ import {
   CAPITAL_DQ_VALUE,
   classifyFullSubmission,
   classifyPartialSubmission,
+  isFakeLeadIdentity,
+  isObviousFakeEmail,
+  isObviousFakeText,
   isValidEmail,
   normalizePhoneDigits10,
   type FakeLeadConfig,
   type LeadInput,
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
-import { createAppointment, freeSlots, slotDurationMinutes, upsertContact, type GhlConfig } from "./ghl.ts";
+import { createAppointment, freeSlots, slotDurationMinutes, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
@@ -386,6 +389,7 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", route, "country:", country);
   ctx.waitUntil(pushToGhl(env, row));
+  ctx.waitUntil(syncLeadContact(env, row, typeof tracking?.timezone === "string" ? tracking.timezone : undefined));
   const leadFields = {
     lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
     capital: row.capital, name: row.name, email: row.email, phone: row.phone, survey_partial: partial,
@@ -414,6 +418,84 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
     .bind(since, limit)
     .all();
   return json({ ok: true, count: results.length, leads: results }, 200, {});
+}
+
+/* ---------------- GHL contact sync (email first, phone when it arrives) ---------------- */
+
+function contactsConfig(env: Env): ContactsConfig | null {
+  if (!env.GHL_PIT || !env.GHL_LOCATION_ID) return null;
+  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID };
+}
+
+/** Lead row → GHL contact; records the outcome on the row. */
+async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined): Promise<void> {
+  const cfg = contactsConfig(env);
+  if (!cfg) return;
+  try {
+    const id = await upsertSurveyContact(cfg, {
+      name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
+      timeline: row.timeline, business_owner: row.business_owner, capital: row.capital,
+      qualified: row.capital ? /^Yes/.test(row.capital) : null,
+    });
+    await env.DB.prepare("UPDATE leads SET ghl_contact_id = ?1 WHERE id = ?2").bind(id, row.id).run();
+    console.log("[contact] lead", row.id, "→ GHL contact", id);
+  } catch (err) {
+    console.error("[contact] lead", row.id, "GHL upsert failed:", String(err).slice(0, 300));
+  }
+}
+
+type EmailCaptureBody = LeadInput & { tracking?: Tracking | null; [HONEYPOT_FIELD]?: unknown };
+
+/** POST /contact — a valid email (plus answers so far), before any phone exists. */
+async function handleEmailCapture(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cors = corsHeaders(request, env);
+  if (!originAllowed(request, env)) return json({ ok: false, error: "Forbidden" }, 403, cors);
+  const body = (await readBody(request)) as EmailCaptureBody | null;
+  if (!body) return json({ ok: false, error: "Bad request" }, 400, cors);
+  const ip = clientIp(request);
+  if (env.RL_EVENTS) {
+    try { const { success } = await env.RL_EVENTS.limit({ key: `ip:${ip}` }); if (!success) return json({ ok: false, error: "Too many requests" }, 429, cors); }
+    catch (err) { console.warn("[contact] rl failed (open):", String(err)); }
+  }
+  const hp = body[HONEYPOT_FIELD];
+  if (hp != null && (typeof hp !== "string" || hp.trim() !== "")) return json({ ok: true, silent: true }, 200, cors);
+  const country = clientCountry(request);
+  if (!countryAllowed(country, env)) return json({ ok: true, silent: true }, 200, cors);
+  const input = leadInput(body);
+  if (!isValidEmail(input.email)) return json({ ok: false, error: "Please enter a valid email address." }, 400, cors);
+  const email = input.email.trim();
+  const name = input.name ?? "";
+  if (isObviousFakeEmail(email) || (name && isObviousFakeText(name)) || isFakeLeadIdentity({ name, email }, fakeLeadConfig(env))) {
+    console.log("[contact] ghosted", maskName(name), maskEmail(email));
+    return json({ ok: true, silent: true }, 200, cors);
+  }
+  const tracking = pickTracking(body.tracking);
+  await env.DB.prepare(
+    `INSERT INTO email_captures (email, name, city, timeline, business_owner, capital, tracking, ip, country)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     ON CONFLICT(email) DO UPDATE SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+       name = COALESCE(excluded.name, name), city = COALESCE(excluded.city, city), timeline = COALESCE(excluded.timeline, timeline),
+       business_owner = COALESCE(excluded.business_owner, business_owner), capital = COALESCE(excluded.capital, capital),
+       tracking = COALESCE(excluded.tracking, tracking)`,
+  ).bind(email, input.name ?? null, input.city ?? null, input.timeline ?? null, input.business_owner ?? null, input.capital ?? null,
+         tracking ? JSON.stringify(tracking) : null, ip, country).run();
+  console.log("[contact] email capture", maskName(name), maskEmail(email), "country:", country);
+  const cfg = contactsConfig(env);
+  if (cfg) ctx.waitUntil((async () => {
+    try {
+      const id = await upsertSurveyContact(cfg, {
+        name: input.name, email, city: input.city, timezone: typeof tracking?.timezone === "string" ? tracking.timezone : undefined,
+        timeline: input.timeline, business_owner: input.business_owner, capital: input.capital,
+        qualified: input.capital ? /^Yes/.test(input.capital) : null,
+      });
+      await env.DB.prepare("UPDATE email_captures SET ghl_contact_id = ?1, ghl_status = 'sent', ghl_error = NULL WHERE email = ?2").bind(id, email).run();
+      console.log("[contact] email-only → GHL contact", id);
+    } catch (err) {
+      await env.DB.prepare("UPDATE email_captures SET ghl_status = 'failed', ghl_error = ?1 WHERE email = ?2").bind(String(err).slice(0, 300), email).run();
+      console.error("[contact] email-only GHL upsert failed:", String(err).slice(0, 300));
+    }
+  })());
+  return json({ ok: true }, 202, cors);
 }
 
 /* ---------------- step webhooks (Cortana) ---------------- */
@@ -566,17 +648,17 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
 
   // The slot must belong to a lead this API stored (a completed, qualified survey).
   const lead = await env.DB.prepare(
-    "SELECT id, name, email, city, route FROM leads WHERE phone = ?1 AND status = 'full' ORDER BY id DESC LIMIT 1",
-  ).bind(phone).first<{ id: number; name: string | null; email: string | null; city: string | null; route: string | null }>();
+    "SELECT id, name, email, city, timeline, business_owner, capital, route FROM leads WHERE phone = ?1 AND status = 'full' ORDER BY id DESC LIMIT 1",
+  ).bind(phone).first<{ id: number; name: string | null; email: string | null; city: string | null; timeline: string | null; business_owner: string | null; capital: string | null; route: string | null }>();
   if (!lead || lead.route !== "calendar") return json({ ok: false, error: "Please complete the application first." }, 400, cors);
 
   try {
     const minutes = await slotDurationMinutes(cfg);
     const endMs = startMs + minutes * 60_000;
-    const parts = (lead.name ?? "").trim().split(/\s+/).filter(Boolean);
-    const contactId = await upsertContact(cfg, {
-      firstName: parts[0], lastName: parts.length > 1 ? parts.slice(1).join(" ") : undefined,
-      email: lead.email ?? undefined, phone, timezone: tz, city: lead.city ?? undefined,
+    const contactId = await upsertSurveyContact(cfg, {
+      name: lead.name, email: lead.email, phone, timezone: tz, city: lead.city,
+      timeline: lead.timeline, business_owner: lead.business_owner, capital: lead.capital,
+      qualified: lead.capital ? /^Yes/.test(lead.capital) : null,
     });
     const title = `${lead.name ?? "Dealer"} - ${env.APPOINTMENT_TITLE ?? "Dealer Strategy Session"}`;
     const appointmentId = await createAppointment(cfg, {
@@ -607,6 +689,7 @@ export default {
     if (request.method === "GET" && path === "/leads") return handleExport(request, env);
     if (request.method === "GET" && path === "/slots") return handleSlots(request, env);
     if (request.method === "POST" && path === "/event") return handleEvent(request, env, ctx);
+    if (request.method === "POST" && path === "/contact") return handleEmailCapture(request, env, ctx);
     if (request.method === "POST" && path === "/book") return handleBook(request, env, ctx);
     if (request.method === "POST" && path === "/lead") return handleLead(request, env, ctx, false);
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);

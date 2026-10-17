@@ -95,3 +95,74 @@ export async function createAppointment(
   if (!data.id) throw new Error("GHL appointment returned no id");
   return data.id;
 }
+
+/* ---------------- contacts + custom fields (survey answers on the GHL contact) ---------------- */
+
+export type ContactsConfig = { token: string; locationId: string };
+
+/** Custom fields the funnel writes; created on first use if the sub-account lacks them. */
+export const SURVEY_FIELDS = [
+  { key: "timeline", name: "Survey: Timeline" },
+  { key: "business_owner", name: "Survey: Business Owner" },
+  { key: "capital", name: "Survey: Capital" },
+  { key: "qualified", name: "Survey: Qualified" },
+  { key: "city", name: "Survey: City" },
+] as const;
+
+let fieldIdCache: { locationId: string; ids: Record<string, string> } | null = null;
+
+async function listCustomFields(cfg: ContactsConfig): Promise<Array<{ id: string; name: string }>> {
+  const data = await ghl<{ customFields?: Array<{ id: string; name: string }> }>(cfg as GhlConfig, `/locations/${cfg.locationId}/customFields?model=contact`);
+  return data.customFields ?? [];
+}
+
+/** Resolve (and if needed create) the survey custom fields; returns key → field id. */
+export async function ensureSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
+  if (fieldIdCache && fieldIdCache.locationId === cfg.locationId && Object.keys(fieldIdCache.ids).length === SURVEY_FIELDS.length) return fieldIdCache.ids;
+  const existing = await listCustomFields(cfg);
+  const ids: Record<string, string> = {};
+  for (const f of SURVEY_FIELDS) {
+    const found = existing.find((e) => e.name.trim().toLowerCase() === f.name.toLowerCase());
+    if (found) { ids[f.key] = found.id; continue; }
+    const created = await ghl<{ customField?: { id: string } }>(cfg as GhlConfig, `/locations/${cfg.locationId}/customFields`, {
+      method: "POST",
+      body: JSON.stringify({ name: f.name, dataType: "TEXT", model: "contact", placeholder: "" }),
+    });
+    if (created.customField?.id) ids[f.key] = created.customField.id;
+  }
+  fieldIdCache = { locationId: cfg.locationId, ids };
+  return ids;
+}
+
+export type SurveyContact = {
+  name?: string | null; email?: string | null; phone?: string | null; city?: string | null; timezone?: string | null;
+  timeline?: string | null; business_owner?: string | null; capital?: string | null; qualified?: boolean | null;
+};
+
+/** Create or update the contact (GHL matches on email or phone) with the survey answers as custom fields. */
+export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact): Promise<string> {
+  let ids: Record<string, string> = {};
+  try { ids = await ensureSurveyFields(cfg); } catch (err) { console.warn("[ghl] custom fields unavailable, contact saved without them:", String(err).slice(0, 160)); }
+  const parts = (c.name ?? "").trim().split(/\s+/).filter(Boolean);
+  const customFields: Array<{ id: string; field_value: string }> = [];
+  const put = (key: string, value: string | null | undefined) => { if (ids[key] && value) customFields.push({ id: ids[key], field_value: value }); };
+  put("timeline", c.timeline); put("business_owner", c.business_owner); put("capital", c.capital); put("city", c.city);
+  if (c.qualified != null) put("qualified", c.qualified ? "Yes" : "No");
+  const tags = ["funnel-application", ...(c.qualified == null ? [] : [c.qualified ? "qualified" : "not-qualified"]), ...(c.phone ? [] : ["email-only"])];
+  const body: Record<string, unknown> = {
+    locationId: cfg.locationId,
+    ...(parts[0] ? { firstName: parts[0] } : {}),
+    ...(parts.length > 1 ? { lastName: parts.slice(1).join(" ") } : {}),
+    ...(c.email ? { email: c.email } : {}),
+    ...(c.phone ? { phone: c.phone } : {}),
+    ...(c.city ? { city: c.city } : {}),
+    ...(c.timezone ? { timezone: c.timezone } : {}),
+    source: "startroofrejuvenating.com application",
+    tags,
+    ...(customFields.length ? { customFields } : {}),
+  };
+  const data = await ghl<{ contact?: { id?: string } }>(cfg as GhlConfig, "/contacts/upsert", { method: "POST", body: JSON.stringify(body) });
+  const id = data.contact?.id;
+  if (!id) throw new Error("GHL upsert returned no contact id");
+  return id;
+}
