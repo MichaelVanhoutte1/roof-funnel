@@ -114,7 +114,8 @@
   window.addEventListener("load", captureTracking);
 
   /* ---------------- validation (client side; the API re-checks everything) ---------------- */
-  function nationalDigits(v) { var d = (v || "").replace(/\D/g, ""); return d.length === 11 && d.charAt(0) === "1" ? d.slice(1) : d; }
+  /* Digits only; a leading country-code 1 is dropped (NANP area codes never start with 1). */
+  function nationalDigits(v) { var d = (v || "").replace(/\D/g, ""); return d.length > 10 && d.charAt(0) === "1" ? d.slice(1) : d; }
   function formatPhone(d) {
     d = d.replace(/\D/g, "");
     if (d.length > 10) return d;
@@ -193,11 +194,16 @@
       var input = el("input", {
         id: "sv-" + s.key, name: s.key, type: s.type === "tel" ? "tel" : s.type, class: "sv-field",
         placeholder: s.placeholder, autocomplete: s.autocomplete, enterkeyhint: "done",
+        maxlength: s.type === "tel" ? "14" : undefined, pattern: s.type === "tel" ? "[0-9()\\- ]*" : undefined,
         inputmode: s.type === "tel" ? "numeric" : s.type === "email" ? "email" : undefined, "aria-label": s.aria,
       });
       if (s.type === "tel") {
+        input.addEventListener("keydown", function (e) {
+          if (e.key.length === 1 && !/[0-9]/.test(e.key) && !e.metaKey && !e.ctrlKey) e.preventDefault();
+        });
         input.addEventListener("input", function () {
-          var d = nationalDigits(input.value);
+          // North American numbers only: 10 digits, a pasted leading 1 is dropped, anything past 10 is ignored.
+          var d = nationalDigits(input.value).slice(0, 10);
           state.phone = d;
           phoneEditedAt = Date.now();
           input.value = formatPhone(d);
