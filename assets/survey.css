@@ -120,3 +120,11 @@
 .sv-cal-select{margin-top:14px}
 .sv-cal-select[disabled]{background:#a8d9ea;opacity:1;box-shadow:none}
 @media(min-width:760px){.sv-cal .sv-cta,.sv-cal .sv-error{width:100%}}
+
+/* phones: the widget breaks out of the page gutters to 96% of the viewport */
+@media(max-width:600px){
+  .form-section .typeform-container{width:96vw;max-width:96vw;margin-left:calc(50% - 48vw);margin-right:0}
+  .sv{padding:18px 12px 16px}
+  .sv-back{left:12px;top:18px}
+  .sv-cal-left,.sv-cal-right{padding:16px 14px}
+}

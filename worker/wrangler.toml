@@ -17,8 +17,8 @@ ALLOWED_COUNTRIES = "US,CA"
 # ADMIN_TOKEN (bearer for GET /leads export), GHL_PIT (Private Integration Token for the native calendar).
 # Native booking step: set both ids here (or as secrets) once the calendar exists; until then the
 # widget falls back to the GHL booking widget URL in data-calendar, or the thanks panel.
-# GHL_LOCATION_ID = ""
-# GHL_CALENDAR_ID = ""
+GHL_LOCATION_ID = "3gudshrCPDTXkxtm42SI"
+GHL_CALENDAR_ID = "2VDSg7KG2R0m4U9Ge1Rq"
 APPOINTMENT_TITLE = "Dealer Strategy Session"
 
 [[d1_databases]]
