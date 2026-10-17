@@ -20,6 +20,19 @@ ALLOWED_COUNTRIES = "US,CA"
 GHL_LOCATION_ID = "3gudshrCPDTXkxtm42SI"
 GHL_CALENDAR_ID = "2VDSg7KG2R0m4U9Ge1Rq"
 APPOINTMENT_TITLE = "Dealer Strategy Session"
+# Cortana step webhooks, relayed server-side by POST /event (step events) and by the lead handlers
+# (phone = stored lead). Keys are the event names the survey sends.
+CORTANA_WEBHOOKS = """{
+  "q1": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/96a483f2-5095-43f8-9a9c-239d97ddd6ea",
+  "q2": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/a4b8a580-e33c-407a-ad2f-870d17d11e5f",
+  "q3": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/c0a8ad4b-2e02-4909-a0d9-d42183c0d93c",
+  "q4": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/8fe92c69-10c9-47ac-86d4-f168b541a826",
+  "q5": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/5de42f78-044c-47fc-9b90-f69f30eb82c0",
+  "q6": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/c03c3026-bd1f-4fc1-a51f-ab1847d2009f",
+  "email": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/05df6ced-ab73-4051-aa0c-5f0a3adda8ba",
+  "phone": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/debf8cfc-132c-474e-8995-46c06bceecb8",
+  "qualified": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/eb34c0b6-8aa1-4a13-bcb9-2b9c029d9a97"
+}"""
 
 [[d1_databases]]
 binding = "DB"
@@ -33,3 +46,10 @@ name = "RL_MINUTE"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 8, period = 60 }
+
+# Step events are chattier (~10 per visitor): their own budget.
+[[unsafe.bindings]]
+name = "RL_EVENTS"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }

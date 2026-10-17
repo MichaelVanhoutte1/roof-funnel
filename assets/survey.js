@@ -16,6 +16,7 @@
   var CALENDAR_URL = mount.getAttribute("data-calendar") || "";
   var THANKYOU_URL = mount.getAttribute("data-thankyou") || "/thankyou-page/";
   var HONEYPOT_FIELD = "contact_fax";
+  var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
 
   var STEPS = [
     { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
@@ -274,6 +275,8 @@
     if (state.advancing) return;
     state.answers[key] = value;
     mirrors[key].value = value;
+    trackEvent(STEP_EVENTS[key], STEP_EVENTS[key]);
+    if (key === "capital" && /^Yes/.test(value)) trackEvent("qualified", "qualified");
     refs.choices[key].forEach(function (b) { b.classList.toggle("is-selected", b.textContent === value); });
     state.advancing = true;
     refs.choices[key].forEach(function (b) { b.disabled = true; });
@@ -345,6 +348,40 @@
     if (document.visibilityState === "hidden" && state.step >= PHONE_STEP) sendPartial(false);
   });
 
+  /* ---------------- step webhooks (relayed by the API) ---------------- */
+  var sentEvents = {};
+  function trackEvent(event, once) {
+    if (PREVIEW || !API) return;
+    if (once && sentEvents[once]) return;
+    if (once) sentEvents[once] = true;
+    var body = payloadBase();
+    body.event = event;
+    try {
+      fetch(API + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(function () {});
+    } catch (e) {}
+  }
+  var STEP_EVENTS = { city: "q1", timeline: "q2", business_owner: "q3", capital: "q4", name: "q5", email: "q6" };
+
+  /* Email: captured as soon as a valid address settles, even if Continue is never pressed. */
+  var emailTimer = null;
+  function captureEmail(immediate) {
+    var v = (refs.inputs.email.value || "").trim();
+    if (!isValidEmail(v)) return;
+    clearTimeout(emailTimer);
+    var fire = function () { trackEvent("email", "email:" + v.toLowerCase()); };
+    if (immediate) fire(); else emailTimer = setTimeout(fire, 2500);
+  }
+  refs.inputs.email.addEventListener("input", function () { captureEmail(false); });
+  refs.inputs.email.addEventListener("blur", function () { captureEmail(true); });
+  /* Phone: a valid number left idle is banked as a partial lead (the API fires the phone webhook). */
+  var phoneIdle = null;
+  refs.inputs.phone.addEventListener("input", function () {
+    clearTimeout(phoneIdle);
+    if (phoneE164(nationalDigits(refs.inputs.phone.value))) phoneIdle = setTimeout(function () { sendPartial(false); }, PHONE_SETTLE_MS + 500);
+  });
+  window.addEventListener("pagehide", function () { captureEmail(true); });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureEmail(true); });
+
   /* ---------------- typing steps ---------------- */
   form.addEventListener("submit", function (e) {
     e.preventDefault();
@@ -353,15 +390,15 @@
     var c = readContact();
     if (s.key === "city") {
       if (c.city.length < 2) { setError("city", "Please enter your city."); return; }
-      setError("city", ""); goTo(state.step + 1); focusStep(state.step); return;
+      setError("city", ""); trackEvent("q1", "q1"); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "name") {
       if (!c.name) { setError("name", "Please enter your full name"); return; }
-      setError("name", ""); goTo(state.step + 1); focusStep(state.step); return;
+      setError("name", ""); trackEvent("q5", "q5"); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "email") {
       if (!isValidEmail(c.email)) { setError("email", "Please enter a valid email address"); return; }
-      setError("email", ""); goTo(state.step + 1); focusStep(state.step); return;
+      setError("email", ""); captureEmail(true); trackEvent("q6", "q6"); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "phone") {
       if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }
@@ -466,7 +503,6 @@
     }
     return out;
   }
-  var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
 
   function startBooking(c) {
     if (PREVIEW) { var n = new Date(); return renderBooking(c, browserTz(), { y: n.getFullYear(), m: n.getMonth(), dates: previewSlots(n.getFullYear(), n.getMonth()), preview: true }); }

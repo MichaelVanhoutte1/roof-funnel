@@ -27,6 +27,9 @@ type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boole
 export interface Env {
   DB: D1Database;
   RL_MINUTE?: RateLimitBinding;
+  RL_EVENTS?: RateLimitBinding;
+  /** JSON map of event name → webhook URL (Cortana). */
+  CORTANA_WEBHOOKS?: string;
   ALLOWED_ORIGINS: string;
   ALLOWED_COUNTRIES: string;
   GHL_WEBHOOK_URL?: string;
@@ -383,6 +386,11 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", route, "country:", country);
   ctx.waitUntil(pushToGhl(env, row));
+  ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", {
+    lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
+    capital: row.capital, name: row.name, email: row.email, phone: row.phone,
+    survey_partial: partial, ...(qualified == null ? {} : { qualified }),
+  }, tracking, country)));
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
   return json({ ok: true, lead_id: row.id, route, qualified }, 200, cors);
@@ -403,6 +411,79 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
     .bind(since, limit)
     .all();
   return json({ ok: true, count: results.length, leads: results }, 200, {});
+}
+
+/* ---------------- step webhooks (Cortana) ---------------- */
+
+const EVENT_FIELDS = ["session_id", "city", "timeline", "business_owner", "capital", "name", "email", "phone"] as const;
+const EVENT_NAMES = new Set(["q1", "q2", "q3", "q4", "q5", "q6", "email", "phone", "qualified"]);
+
+function webhookMap(env: Env): Record<string, string> {
+  try {
+    const m = JSON.parse(env.CORTANA_WEBHOOKS ?? "{}") as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(m)) if (typeof v === "string" && /^https:\/\//.test(v)) out[k] = v;
+    return out;
+  } catch { return {}; }
+}
+
+/** The lead at the top level of the body (Cortana reads it there), plus flattened tracking. */
+function eventPayload(event: string, fields: Record<string, unknown>, tracking: Tracking | undefined, country: string | null) {
+  const name = typeof fields.name === "string" ? fields.name.trim() : "";
+  const parts = name.split(/\s+/).filter(Boolean);
+  return {
+    event,
+    timestamp: new Date().toISOString(),
+    ...fields,
+    ...(parts[0] ? { first_name: parts[0] } : {}),
+    ...(parts.length > 1 ? { last_name: parts.slice(1).join(" ") } : {}),
+    ...(country ? { ip_country: country } : {}),
+    ...(tracking ?? {}),
+  };
+}
+
+async function relayEvent(env: Env, event: string, payload: Record<string, unknown>): Promise<void> {
+  const url = webhookMap(env)[event];
+  if (!url) return;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) console.error("[event]", event, "webhook", res.status, (await res.text().catch(() => "")).slice(0, 200));
+  } catch (err) {
+    console.error("[event]", event, "webhook failed:", String(err).slice(0, 200));
+  }
+}
+
+/** POST /event { event, session_id, city?, timeline?, …, tracking? } → relayed to the matching webhook. */
+async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cors = corsHeaders(request, env);
+  if (!originAllowed(request, env)) return json({ ok: false, error: "Forbidden" }, 403, cors);
+  const body = await readBody(request);
+  if (!body) return json({ ok: false, error: "Bad request" }, 400, cors);
+  const ip = clientIp(request);
+  if (env.RL_EVENTS) {
+    try { const { success } = await env.RL_EVENTS.limit({ key: `ip:${ip}` }); if (!success) return json({ ok: false, error: "Too many events" }, 429, cors); }
+    catch (err) { console.warn("[event] rl failed (open):", String(err)); }
+  }
+  const raw = body as unknown as Record<string, unknown>;
+  const event = typeof raw.event === "string" ? raw.event : "";
+  if (!EVENT_NAMES.has(event)) return json({ ok: false, error: "Unknown event" }, 400, cors);
+  const hp = raw[HONEYPOT_FIELD];
+  if (hp != null && (typeof hp !== "string" || hp.trim() !== "")) return json({ ok: true, silent: true }, 200, cors);
+  const country = clientCountry(request);
+  if (!countryAllowed(country, env)) return json({ ok: true, silent: true }, 200, cors);
+  const fields: Record<string, unknown> = {};
+  for (const k of EVENT_FIELDS) { const v = str(raw[k], k === "email" ? 254 : 120); if (v) fields[k] = v; }
+  if (typeof fields.phone === "string") { const d = normalizePhoneDigits10(fields.phone); if (d) fields.phone = `+1${d}`; else delete fields.phone; }
+  if (typeof fields.email === "string" && !isValidEmail(fields.email)) delete fields.email;
+  if (event === "qualified") fields.qualified = true;
+  const payload = eventPayload(event, fields, pickTracking(raw.tracking), country);
+  ctx.waitUntil(relayEvent(env, event, payload));
+  return json({ ok: true }, 202, cors);
 }
 
 /* ---------------- native booking (GHL calendar) ---------------- */
@@ -510,6 +591,7 @@ export default {
     if (request.method === "GET" && path === "/health") return json({ ok: true }, 200, {});
     if (request.method === "GET" && path === "/leads") return handleExport(request, env);
     if (request.method === "GET" && path === "/slots") return handleSlots(request, env);
+    if (request.method === "POST" && path === "/event") return handleEvent(request, env, ctx);
     if (request.method === "POST" && path === "/book") return handleBook(request, env, ctx);
     if (request.method === "POST" && path === "/lead") return handleLead(request, env, ctx, false);
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
