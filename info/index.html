@@ -122,24 +122,35 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 <div class="container">
  <span class="step-badge">Step 2</span>
  <h2 class="step-heading">Add The Call To Your Calendar By Clicking Below</h2>
+ <div id="cal-wrap">
  <div class="calendar-center">
- <a id="cal-btn" href="#" class="calendar-btn" target="_blank">📅 Add To My Calendar</a>
+ <a id="cal-btn" href="#" class="calendar-btn" target="_blank" rel="noopener">📅 Add To Google Calendar</a>
  </div>
+ <p class="alt-text" style="margin-top:8px"><a id="ics-btn" href="#" style="color:#5DB7D8;text-decoration:underline">Apple Calendar / Outlook (.ics)</a></p>
  <p class="alt-text">OR check your email and click <strong>"I know the sender"</strong> in your event email we just sent you!</p>
+ </div>
  <script>
  (function(){
  var p=new URLSearchParams(window.location.search);
  var t=p.get('event_type_name')||p.get('title')||'Dealer Strategy Session';
- var d=p.get('date')||'';
- var st=p.get('event_start_time')||'';
- var et=p.get('event_end_time')||'';
- var tz=p.get('timezone')||'';
+ var d=p.get('date')||'', st=p.get('event_start_time')||'', et=p.get('event_end_time')||'';
+ var tz=p.get('timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
  var loc=p.get('location')||'';
- var fmt=function(s){if(!s)return'';try{var x=new Date(s);return x.toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'')}catch(e){return''}};
- var sd=fmt(d+'T'+st),ed=fmt(d+'T'+et);
- if(sd&&ed){
- document.getElementById('cal-btn').href='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(t)+'&dates='+sd+'/'+ed+(tz?'&ctz='+encodeURIComponent(tz):'')+(loc?'&location='+encodeURIComponent(loc):'')+'&details='+encodeURIComponent('Start Roof Rejuvenating Dealer Strategy Session');
+ var wrap=document.getElementById('cal-wrap'), btn=document.getElementById('cal-btn'), ics=document.getElementById('ics-btn');
+ /* Wall-clock time in `tz` → real UTC instant (two-pass offset so DST is honoured). */
+ function utcFromZone(date,time,zone){
+   var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(date), h=/^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time); if(!m||!h) return null;
+   var guess=Date.UTC(+m[1],+m[2]-1,+m[3],+h[1],+h[2],+(h[3]||0));
+   function offsetAt(ms){ var parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date(ms)); var o={}; parts.forEach(function(x){o[x.type]=x.value;}); return Date.UTC(+o.year,+o.month-1,+o.day,+o.hour%24,+o.minute,+o.second)-ms; }
+   var ms=guess-offsetAt(guess); ms=guess-offsetAt(ms); return new Date(ms);
  }
+ var s=utcFromZone(d,st,tz), e=utcFromZone(d,et,tz);
+ if(!s||!e||isNaN(s)||isNaN(e)){ if(wrap) wrap.style.display='none'; return; }
+ var fmt=function(x){ return x.toISOString().replace(/[-:]/g,'').replace(/\.\d+/,''); };
+ var details='Start Roof Rejuvenating Dealer Strategy Session';
+ btn.href='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(t)+'&dates='+fmt(s)+'/'+fmt(e)+'&ctz='+encodeURIComponent(tz)+(loc?'&location='+encodeURIComponent(loc):'')+'&details='+encodeURIComponent(details);
+ var body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Start Roof Rejuvenating//Booking//EN','BEGIN:VEVENT','UID:'+fmt(s)+'@startroofrejuvenating.com','DTSTAMP:'+fmt(new Date()),'DTSTART:'+fmt(s),'DTEND:'+fmt(e),'SUMMARY:'+t.replace(/[,;]/g,'\\$&'),'DESCRIPTION:'+details,(loc?'LOCATION:'+loc.replace(/[,;]/g,'\\$&'):''),'END:VEVENT','END:VCALENDAR'].filter(Boolean).join('\r\n');
+ if(ics){ ics.href='data:text/calendar;charset=utf-8,'+encodeURIComponent(body); ics.setAttribute('download','dealer-strategy-session.ics'); }
  })();
  </script>
  <div style="text-align:center;margin-top:24px">
