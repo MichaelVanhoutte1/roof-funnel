@@ -380,6 +380,7 @@
     var c = readContact();
     if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); goTo(PHONE_STEP); return; }
     if (!state.answers.timeline || !state.answers.business_owner || !state.answers.capital) { goTo(0); return; }
+    if (PREVIEW) { fullSent = true; clearAbandonTimer(); startBooking(c); return; }
     setSubmitting(true);
     var body = payloadBase();
     if (partialPhone && partialPhone !== c.phone) body.superseded_phone = partialPhone;
@@ -455,7 +456,20 @@
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function ymd(y, m, d) { return y + "-" + pad(m + 1) + "-" + pad(d); }
 
+  /** ?sv_preview=calendar skips the API and shows the calendar with demo slots (design review only; booking is disabled). */
+  function previewSlots(y, m) {
+    var out = {}, days = new Date(y, m + 1, 0).getDate();
+    for (var d = 1; d <= days; d++) {
+      var dt = new Date(y, m, d); if (dt.getDay() === 0 || dt < new Date(new Date().setHours(0, 0, 0, 0))) continue;
+      var arr = []; for (var h = 9; h < 17; h++) { arr.push(new Date(y, m, d, h, 0).toISOString()); arr.push(new Date(y, m, d, h, 30).toISOString()); }
+      out[ymd(y, m, d)] = arr;
+    }
+    return out;
+  }
+  var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
+
   function startBooking(c) {
+    if (PREVIEW) { var n = new Date(); return renderBooking(c, browserTz(), { y: n.getFullYear(), m: n.getMonth(), dates: previewSlots(n.getFullYear(), n.getMonth()), preview: true }); }
     if (!API) { return CALENDAR_URL ? showCalendar(c) : showPanel("thanks", c); }
     var tz = browserTz();
     var now = new Date();
@@ -559,6 +573,7 @@
       var key = st.y + "-" + st.m + "-" + st.tz;
       var apply = function (dates) { st.dates = dates; if (!st.day || st.day.slice(0, 7) !== ymd(st.y, st.m, 1).slice(0, 7)) pickFirstDay(); drawMonth(); drawTimes(); };
       if (cache[key]) { apply(cache[key]); return; }
+      if (first.preview) { cache[key] = previewSlots(st.y, st.m); apply(cache[key]); return; }
       st.loading = true; grid.classList.add("is-loading");
       fetch(API + "/slots?start=" + ymd(st.y, st.m, 1) + "&end=" + ymd(st.y, st.m, new Date(st.y, st.m + 1, 0).getDate()) + "&tz=" + encodeURIComponent(st.tz))
         .then(function (r) { return r.json(); })
@@ -573,6 +588,7 @@
 
     selectBtn.addEventListener("click", function () {
       if (!st.slot) return;
+      if (first.preview) { err.textContent = "Preview only — booking is switched on once the GHL calendar is connected."; return; }
       selectBtn.disabled = true; selectBtn.textContent = "Booking…"; err.textContent = "";
       fetch(API + "/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, start: st.slot, tz: st.tz }) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, data: d }; }); })
