@@ -14,6 +14,7 @@
 
   var API = (mount.getAttribute("data-api") || "").replace(/\/+$/, "");
   var CALENDAR_URL = mount.getAttribute("data-calendar") || "";
+  var THANKYOU_URL = mount.getAttribute("data-thankyou") || "/thankyou-page/";
   var HONEYPOT_FIELD = "contact_fax";
 
   var STEPS = [
@@ -394,8 +395,9 @@
           return;
         }
         fullSent = true; clearAbandonTimer();
-        if (r.data.silent || r.data.route === "dq" || !CALENDAR_URL) showPanel(r.data.silent ? "thanks" : r.data.route === "dq" ? "dq" : "thanks", c);
-        else showCalendar(c);
+        if (r.data.silent) showPanel("thanks", c);
+        else if (r.data.route === "dq") showPanel("dq", c);
+        else startBooking(c);
       })
       .catch(function () { setError("phone", "Something went wrong. Please try again."); })
       .then(function () { setSubmitting(false); });
@@ -417,6 +419,187 @@
     }
     mount.appendChild(panel);
     scrollIntoView();
+  }
+
+  /* ---------------- native booking calendar (slots + book via the API) ---------------- */
+  var TZ_CHOICES = [
+    ["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona"],
+    ["America/Los_Angeles", "Pacific"], ["America/Anchorage", "Alaska"], ["Pacific/Honolulu", "Hawaii"],
+    ["America/Halifax", "Atlantic"], ["America/St_Johns", "Newfoundland"], ["America/Toronto", "Toronto"], ["America/Vancouver", "Vancouver"],
+    ["America/Edmonton", "Edmonton"], ["America/Winnipeg", "Winnipeg"]
+  ];
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  function browserTz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"; } catch (e) { return "America/New_York"; } }
+  function tzLabel(tz) {
+    var city = tz.split("/").pop().replace(/_/g, " ");
+    var off = "";
+    try {
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date());
+      var p = parts.filter(function (x) { return x.type === "timeZoneName"; })[0];
+      if (p) off = p.value.replace("GMT", "UTC");
+    } catch (e) {}
+    return city + (off ? " (" + off + ")" : "");
+  }
+  function fmtInTz(iso, tz, opts) { return new Intl.DateTimeFormat("en-US", Object.assign({ timeZone: tz }, opts)).format(new Date(iso)); }
+  function ymdInTz(iso, tz) {
+    var parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(iso));
+    var o = {}; parts.forEach(function (x) { o[x.type] = x.value; });
+    return o.year + "-" + o.month + "-" + o.day;
+  }
+  function hmsInTz(iso, tz) {
+    var parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(new Date(iso));
+    var o = {}; parts.forEach(function (x) { o[x.type] = x.value; });
+    return (o.hour === "24" ? "00" : o.hour) + ":" + o.minute + ":" + o.second;
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function ymd(y, m, d) { return y + "-" + pad(m + 1) + "-" + pad(d); }
+
+  function startBooking(c) {
+    if (!API) { return CALENDAR_URL ? showCalendar(c) : showPanel("thanks", c); }
+    var tz = browserTz();
+    var now = new Date();
+    fetch(API + "/slots?start=" + ymd(now.getFullYear(), now.getMonth(), 1) + "&end=" + ymd(now.getFullYear(), now.getMonth(), new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) + "&tz=" + encodeURIComponent(tz))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.ok && d.configured) renderBooking(c, tz, { y: now.getFullYear(), m: now.getMonth(), dates: d.dates || {} });
+        else if (CALENDAR_URL) showCalendar(c);
+        else showPanel("thanks", c);
+      })
+      .catch(function () { if (CALENDAR_URL) showCalendar(c); else showPanel("thanks", c); });
+  }
+
+  function renderBooking(c, tz, first) {
+    form.remove();
+    var st = { tz: tz, y: first.y, m: first.m, dates: first.dates, day: null, slot: null, loading: false };
+    var cache = {}; cache[st.y + "-" + st.m + "-" + tz] = first.dates;
+
+    var root = el("div", { class: "sv-cal" });
+    var left = el("div", { class: "sv-cal-left" });
+    left.appendChild(el("div", { class: "sv-cal-thanks" }, [el("h3", { text: "Thank you!" }), el("p", { text: "Your submission has been received." })]));
+    var nav = el("div", { class: "sv-cal-nav" });
+    var prevBtn = el("button", { type: "button", class: "sv-cal-arrow", "aria-label": "Previous month", text: "‹" });
+    var monthLbl = el("span", { class: "sv-cal-month" });
+    var nextBtn = el("button", { type: "button", class: "sv-cal-arrow", "aria-label": "Next month", text: "›" });
+    nav.appendChild(prevBtn); nav.appendChild(monthLbl); nav.appendChild(nextBtn);
+    left.appendChild(nav);
+    var grid = el("div", { class: "sv-cal-grid", role: "grid" });
+    left.appendChild(grid);
+    var foot = el("div", { class: "sv-cal-foot" });
+    var tzSel = el("select", { class: "sv-cal-tz", "aria-label": "Time zone" });
+    var choices = TZ_CHOICES.slice();
+    if (!choices.some(function (x) { return x[0] === tz; })) choices.unshift([tz, tz.split("/").pop().replace(/_/g, " ")]);
+    choices.forEach(function (x) { var o = el("option", { value: x[0], text: "🌐 " + tzLabel(x[0]) }); if (x[0] === tz) o.selected = true; tzSel.appendChild(o); });
+    var clock = el("span", { class: "sv-cal-now" });
+    foot.appendChild(tzSel); foot.appendChild(clock);
+    left.appendChild(foot);
+
+    var right = el("div", { class: "sv-cal-right" });
+    var dayH = el("h3", { class: "sv-cal-day" });
+    var countP = el("p", { class: "sv-cal-count" });
+    var times = el("div", { class: "sv-cal-times" });
+    var err = el("p", { class: "sv-error", role: "alert" });
+    var selectBtn = el("button", { type: "button", class: "sv-cta sv-cal-select", text: "Select Timeslot", disabled: true });
+    right.appendChild(dayH); right.appendChild(countP); right.appendChild(times); right.appendChild(err); right.appendChild(selectBtn);
+    root.appendChild(left); root.appendChild(right);
+    mount.appendChild(root);
+
+    function tick() { clock.textContent = fmtInTz(new Date(), st.tz, { hour: "numeric", minute: "2-digit" }); }
+    tick(); var clockTimer = setInterval(tick, 30000);
+
+    function todayYmd() { return ymdInTz(new Date(), st.tz); }
+    function slotsFor(day) { return (st.dates[day] || []).filter(function (iso) { return new Date(iso).getTime() > Date.now(); }); }
+
+    function drawMonth() {
+      monthLbl.textContent = MONTHS[st.m] + " " + st.y;
+      grid.innerHTML = "";
+      ["S", "M", "T", "W", "T", "F", "S"].forEach(function (d) { grid.appendChild(el("div", { class: "sv-cal-dow", text: d })); });
+      var firstDow = new Date(st.y, st.m, 1).getDay();
+      var daysIn = new Date(st.y, st.m + 1, 0).getDate();
+      var prevDays = new Date(st.y, st.m, 0).getDate();
+      var today = todayYmd();
+      for (var i = 0; i < 42; i++) {
+        var n = i - firstDow + 1;
+        var cell;
+        if (n < 1) cell = el("div", { class: "sv-cal-cell is-outside", text: String(prevDays + n) });
+        else if (n > daysIn) cell = el("div", { class: "sv-cal-cell is-outside", text: String(n - daysIn) });
+        else {
+          var key = ymd(st.y, st.m, n);
+          var avail = slotsFor(key).length > 0;
+          cell = el("button", { type: "button", class: "sv-cal-cell" + (avail ? " is-avail" : " is-off") + (key === today ? " is-today" : "") + (key === st.day ? " is-selected" : ""), text: String(n), disabled: !avail });
+          if (avail) cell.addEventListener("click", (function (k) { return function () { st.day = k; st.slot = null; drawMonth(); drawTimes(); }; })(key));
+        }
+        grid.appendChild(cell);
+        if (n > daysIn && (i + 1) % 7 === 0) break;
+      }
+      var nowD = new Date();
+      prevBtn.disabled = st.y < nowD.getFullYear() || (st.y === nowD.getFullYear() && st.m <= nowD.getMonth());
+    }
+
+    function drawTimes() {
+      times.innerHTML = ""; err.textContent = ""; selectBtn.disabled = true;
+      if (!st.day) { dayH.textContent = "Pick a day"; countP.textContent = "Choose a highlighted date to see times."; return; }
+      var list = slotsFor(st.day);
+      dayH.textContent = fmtInTz(st.day + "T12:00:00", st.tz, { weekday: "long", month: "short", day: "numeric" });
+      countP.textContent = list.length + (list.length === 1 ? " time available" : " times available");
+      list.forEach(function (iso) {
+        var b = el("button", { type: "button", class: "sv-cal-time" + (iso === st.slot ? " is-selected" : ""), text: fmtInTz(iso, st.tz, { hour: "numeric", minute: "2-digit" }) });
+        b.addEventListener("click", function () { st.slot = iso; selectBtn.disabled = false; Array.prototype.forEach.call(times.children, function (x) { x.classList.toggle("is-selected", x === b); }); });
+        times.appendChild(b);
+      });
+    }
+
+    function pickFirstDay() {
+      var keys = Object.keys(st.dates).sort();
+      for (var i = 0; i < keys.length; i++) { if (slotsFor(keys[i]).length) { st.day = keys[i]; return; } }
+      st.day = null;
+    }
+
+    function loadMonth() {
+      var key = st.y + "-" + st.m + "-" + st.tz;
+      var apply = function (dates) { st.dates = dates; if (!st.day || st.day.slice(0, 7) !== ymd(st.y, st.m, 1).slice(0, 7)) pickFirstDay(); drawMonth(); drawTimes(); };
+      if (cache[key]) { apply(cache[key]); return; }
+      st.loading = true; grid.classList.add("is-loading");
+      fetch(API + "/slots?start=" + ymd(st.y, st.m, 1) + "&end=" + ymd(st.y, st.m, new Date(st.y, st.m + 1, 0).getDate()) + "&tz=" + encodeURIComponent(st.tz))
+        .then(function (r) { return r.json(); })
+        .then(function (d) { cache[key] = (d && d.ok && d.dates) || {}; apply(cache[key]); })
+        .catch(function () { apply({}); err.textContent = "Could not load availability. Please try again."; })
+        .then(function () { st.loading = false; grid.classList.remove("is-loading"); });
+    }
+
+    prevBtn.addEventListener("click", function () { if (st.m === 0) { st.m = 11; st.y--; } else st.m--; st.day = null; loadMonth(); });
+    nextBtn.addEventListener("click", function () { if (st.m === 11) { st.m = 0; st.y++; } else st.m++; st.day = null; loadMonth(); });
+    tzSel.addEventListener("change", function () { st.tz = tzSel.value; st.day = null; st.slot = null; tick(); loadMonth(); });
+
+    selectBtn.addEventListener("click", function () {
+      if (!st.slot) return;
+      selectBtn.disabled = true; selectBtn.textContent = "Booking…"; err.textContent = "";
+      fetch(API + "/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, start: st.slot, tz: st.tz }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (r) {
+          if (!r.ok || !r.data.ok) {
+            err.textContent = r.data.error || "Could not book that time. Please pick another slot.";
+            selectBtn.textContent = "Select Timeslot"; selectBtn.disabled = false;
+            delete cache[st.y + "-" + st.m + "-" + st.tz]; st.slot = null; loadMonth();
+            return;
+          }
+          clearInterval(clockTimer);
+          var a = r.data.appointment;
+          var q = new URLSearchParams();
+          q.set("event_type_name", a.title || "Dealer Strategy Session");
+          q.set("date", ymdInTz(a.start, st.tz));
+          q.set("event_start_time", hmsInTz(a.start, st.tz));
+          q.set("event_end_time", hmsInTz(a.end, st.tz));
+          q.set("timezone", st.tz);
+          if (c.name) q.set("full_name", c.name);
+          if (c.email) q.set("email", c.email);
+          if (c.phone) q.set("phone", c.phone);
+          window.location.href = THANKYOU_URL + "?" + q.toString();
+        })
+        .catch(function () { err.textContent = "Something went wrong. Please try again."; selectBtn.textContent = "Select Timeslot"; selectBtn.disabled = false; });
+    });
+
+    pickFirstDay(); drawMonth(); drawTimes(); scrollIntoView();
   }
 
   function showCalendar(c) {

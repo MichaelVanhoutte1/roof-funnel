@@ -20,6 +20,7 @@ import {
   type LeadInput,
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
+import { createAppointment, freeSlots, slotDurationMinutes, upsertContact, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
@@ -32,6 +33,12 @@ export interface Env {
   ADMIN_TOKEN?: string;
   FAKE_LEAD_TEST_PHONE_PREFIXES?: string;
   FAKE_LEAD_INTERNAL_EMAIL_DOMAINS?: string;
+  /** Native booking step (optional until set): PIT secret + sub-account + calendar. */
+  GHL_PIT?: string;
+  GHL_LOCATION_ID?: string;
+  GHL_CALENDAR_ID?: string;
+  /** Shown as the appointment title and on the thank-you page. */
+  APPOINTMENT_TITLE?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
@@ -398,6 +405,103 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, count: results.length, leads: results }, 200, {});
 }
 
+/* ---------------- native booking (GHL calendar) ---------------- */
+
+const MAX_RANGE_DAYS = 62;
+const IANA_RE = /^[A-Za-z_]+(?:\/[A-Za-z_+-]+){0,2}$/;
+
+function ghlConfig(env: Env): GhlConfig | null {
+  if (!env.GHL_PIT || !env.GHL_LOCATION_ID || !env.GHL_CALENDAR_ID) return null;
+  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID, calendarId: env.GHL_CALENDAR_ID };
+}
+
+function validTz(tz: string | null): string | null {
+  if (!tz || tz.length > 64 || !IANA_RE.test(tz)) return null;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return tz; } catch { return null; }
+}
+
+/** GET /slots?start=YYYY-MM-DD&end=YYYY-MM-DD&tz=IANA → { ok, configured, dates: { "YYYY-MM-DD": [iso…] } } */
+async function handleSlots(request: Request, env: Env): Promise<Response> {
+  const cors = corsHeaders(request, env);
+  if (!originAllowed(request, env)) return json({ ok: false, error: "Forbidden" }, 403, cors);
+  const cfg = ghlConfig(env);
+  if (!cfg) return json({ ok: true, configured: false, dates: {} }, 200, cors);
+  const url = new URL(request.url);
+  const start = url.searchParams.get("start") ?? "";
+  const end = url.searchParams.get("end") ?? "";
+  const tz = validTz(url.searchParams.get("tz")) ?? "America/New_York";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    return json({ ok: false, error: "start and end must be YYYY-MM-DD" }, 400, cors);
+  }
+  const startMs = Date.parse(start + "T00:00:00Z");
+  const endMs = Date.parse(end + "T23:59:59Z");
+  if (!(endMs > startMs) || endMs - startMs > MAX_RANGE_DAYS * 86_400_000) {
+    return json({ ok: false, error: "Range must be 1–62 days" }, 400, cors);
+  }
+  try {
+    const dates = await freeSlots(cfg, Math.max(startMs, Date.now()), endMs, tz);
+    return json({ ok: true, configured: true, tz, dates }, 200, { ...cors, "Cache-Control": "no-store" });
+  } catch (err) {
+    console.error("[slots] GHL error:", String(err).slice(0, 300));
+    return json({ ok: false, error: "Could not load availability. Please try again." }, 502, cors);
+  }
+}
+
+type BookBody = { lead_id?: number; phone?: string; email?: string; name?: string; city?: string; start?: string; tz?: string };
+
+/** POST /book { lead_id, phone, start (ISO from /slots), tz } → creates the GHL appointment for the stored lead. */
+async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cors = corsHeaders(request, env);
+  if (!originAllowed(request, env)) return json({ ok: false, error: "Forbidden" }, 403, cors);
+  const cfg = ghlConfig(env);
+  if (!cfg) return json({ ok: false, error: "Booking is not configured yet." }, 503, cors);
+  const body = (await readBody(request)) as BookBody | null;
+  if (!body) return json({ ok: false, error: "Bad request" }, 400, cors);
+  const ip = clientIp(request);
+  if (await rateLimited(env, ip)) return json({ ok: false, error: "Too many requests. Please wait a moment." }, 429, cors);
+
+  const digits = normalizePhoneDigits10(str(body.phone, 40));
+  const start = str(body.start, 40);
+  const tz = validTz(str(body.tz, 64) ?? null) ?? "America/New_York";
+  if (!digits) return json({ ok: false, error: "Enter a valid 10-digit phone number." }, 400, cors);
+  const startMs = start ? Date.parse(start) : NaN;
+  if (!Number.isFinite(startMs) || startMs < Date.now() - 60_000) return json({ ok: false, error: "Please pick a time slot." }, 400, cors);
+  const phone = `+1${digits}`;
+
+  // The slot must belong to a lead this API stored (a completed, qualified survey).
+  const lead = await env.DB.prepare(
+    "SELECT id, name, email, city, route FROM leads WHERE phone = ?1 AND status = 'full' ORDER BY id DESC LIMIT 1",
+  ).bind(phone).first<{ id: number; name: string | null; email: string | null; city: string | null; route: string | null }>();
+  if (!lead || lead.route !== "calendar") return json({ ok: false, error: "Please complete the application first." }, 400, cors);
+
+  try {
+    const minutes = await slotDurationMinutes(cfg);
+    const endMs = startMs + minutes * 60_000;
+    const parts = (lead.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const contactId = await upsertContact(cfg, {
+      firstName: parts[0], lastName: parts.length > 1 ? parts.slice(1).join(" ") : undefined,
+      email: lead.email ?? undefined, phone, timezone: tz, city: lead.city ?? undefined,
+    });
+    const title = `${lead.name ?? "Dealer"} - ${env.APPOINTMENT_TITLE ?? "Dealer Strategy Session"}`;
+    const appointmentId = await createAppointment(cfg, {
+      contactId, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString(), title,
+    });
+    await env.DB.prepare(
+      "UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_end = ?3, appointment_tz = ?4, ghl_contact_id = ?5, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?6",
+    ).bind(appointmentId, new Date(startMs).toISOString(), new Date(endMs).toISOString(), tz, contactId, lead.id).run();
+    console.log("[book] appointment", appointmentId, "lead", lead.id, maskName(lead.name), maskPhone(phone), start, tz);
+    return json({
+      ok: true,
+      appointment: { id: appointmentId, start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), tz, title: env.APPOINTMENT_TITLE ?? "Dealer Strategy Session", minutes },
+    }, 200, cors);
+  } catch (err) {
+    const msg = String(err);
+    console.error("[book] failed for lead", lead.id, msg.slice(0, 300));
+    const taken = /slot|not available|already|unavailable/i.test(msg);
+    return json({ ok: false, error: taken ? "That time was just taken. Please pick another slot." : "Could not book the appointment. Please try another time." }, 502, cors);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -405,6 +509,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     if (request.method === "GET" && path === "/health") return json({ ok: true }, 200, {});
     if (request.method === "GET" && path === "/leads") return handleExport(request, env);
+    if (request.method === "GET" && path === "/slots") return handleSlots(request, env);
+    if (request.method === "POST" && path === "/book") return handleBook(request, env, ctx);
     if (request.method === "POST" && path === "/lead") return handleLead(request, env, ctx, false);
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
     return json({ ok: false, error: "Not found" }, 404, corsHeaders(request, env));

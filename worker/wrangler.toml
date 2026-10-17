@@ -14,7 +14,12 @@ ALLOWED_ORIGINS = "https://startroofrejuvenating.com,https://www.startroofrejuve
 # Leads are processed for these IP countries only; others get a silent success (no CRM).
 ALLOWED_COUNTRIES = "US,CA"
 # Secrets (wrangler secret put): GHL_WEBHOOK_URL (LeadConnector inbound-webhook workflow URL),
-# ADMIN_TOKEN (bearer for GET /leads export).
+# ADMIN_TOKEN (bearer for GET /leads export), GHL_PIT (Private Integration Token for the native calendar).
+# Native booking step: set both ids here (or as secrets) once the calendar exists; until then the
+# widget falls back to the GHL booking widget URL in data-calendar, or the thanks panel.
+# GHL_LOCATION_ID = ""
+# GHL_CALENDAR_ID = ""
+APPOINTMENT_TITLE = "Dealer Strategy Session"
 
 [[d1_databases]]
 binding = "DB"

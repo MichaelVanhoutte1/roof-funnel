@@ -56,6 +56,18 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
 
 Logs mask names, phones and emails.
 
+## Native booking step
+
+After a qualified submit the widget calls `GET /slots` on the Worker. When `GHL_PIT`, `GHL_LOCATION_ID`
+and `GHL_CALENDAR_ID` are set, it renders its own calendar (month grid, time list, time-zone picker)
+from GHL's free-slots API and books through `POST /book`, which upserts the contact, creates the
+appointment on the calendar, stores the appointment on the lead row and redirects to
+`/thankyou-page/` with the `date` / `event_start_time` / `event_end_time` / `timezone` params the
+Add To Calendar button reads. Until those three values exist, `/slots` answers `configured:false`
+and the widget falls back to the `data-calendar` GHL widget URL, or the thanks panel if that is
+empty too. Set them with `npx wrangler secret put GHL_PIT` and the two ids in `wrangler.toml`
+(or as secrets), then `npm run deploy`.
+
 ## What is real vs. placeholder
 
 Nothing is a placeholder. All embeds are the originals (Vidalytics VSL, Wistia players, Google Drive previews, Google Slides warranty deck) and all 17 images that were
