@@ -170,3 +170,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 .media-fit{background:#0b1218}
 .media-fit img{object-fit:contain}
+
+/* contractor testimonials (slide 5) */
+.ct-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:-6px 0 16px}
+.ct-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.ct-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.ct-grid{grid-template-columns:1fr}}
+.ct{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.ct-v{background:#000}
+.ct blockquote{margin:0;padding:14px 16px 4px;font-style:italic;color:#cfd8e0;line-height:1.6;font-size:14px}
+.ct figcaption{padding:0 16px 14px;color:var(--muted);font-size:12.5px;font-weight:600}
