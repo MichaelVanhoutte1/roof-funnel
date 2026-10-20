@@ -135,6 +135,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 @media(max-width:640px){.list{font-size:16px}.goal{font-size:15px}.outcome{font-size:15px}.col-h{font-size:13px}}
 
 /* Pillar and results slides: scroll still works, but no scrollbar flashes in for a few px of overflow. The calculator slide keeps its scrollbar. */
+.calc-split{margin:120px 0 0;padding-top:72px;border-top:1px solid var(--calc-line)}
 .slide:not(.calc){scrollbar-width:none}
 .slide:not(.calc)::-webkit-scrollbar{display:none}
 .slide.calc .slide-inner{padding-bottom:80px}

@@ -62,7 +62,8 @@
   var fmt = function (n) { return "$" + Math.round(n).toLocaleString("en-US"); };
   var fmt2 = function (n) { return "$" + n.toFixed(2); };
 
-  /* Pricing state shared by the calculator's sliders. */
+  /* One shared pricing state: the Startup calculator owns the sliders and toggle, the Reorder
+     calculator reads the same values and re-renders whenever they change. */
   var pricing = { price: 1.5, roof: 2500, listeners: [] };
   function notifyPricing() { pricing.listeners.forEach(function (fn) { fn(); }); }
 
@@ -122,4 +123,5 @@
   }
 
   calculator(document.getElementById("calc-startup"), { defaultPkg: 1, makeIsNet: true });
+  calculator(document.getElementById("calc-reorder"), { defaultPkg: 1, makeIsNet: false });
 })();
