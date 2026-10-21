@@ -168,6 +168,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 .media-fit{background:#0b1218}
 .media-fit img{object-fit:contain}
+.media-light{background:#fff}
 
 /* contractor testimonials (slide 5) */
 .ct-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:-6px 0 16px}
