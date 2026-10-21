@@ -171,9 +171,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* contractor testimonials (slide 5) */
 .ct-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:-6px 0 16px}
-.ct-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-@media(max-width:900px){.ct-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.ct-grid{grid-template-columns:1fr}}
+.ct-grid{display:grid;grid-template-columns:1fr;gap:18px;max-width:640px;margin:0 auto}
 .ct{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .ct-v{background:#000}
 .ct blockquote{margin:0;padding:14px 16px 4px;font-style:italic;color:#cfd8e0;line-height:1.6;font-size:14px}
@@ -181,3 +179,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* slide 5: everything in one centred column */
 .slide[aria-label="Testimonials"] .quote,.slide[aria-label="Testimonials"] .sec-h{max-width:640px;margin-left:auto;margin-right:auto}
+
+/* breathing room between the rating bar and the testimonials */
+.slide[aria-label="Testimonials"] .trust{margin-bottom:36px}
+.slide[aria-label="Testimonials"] .proof{margin-top:18px}
