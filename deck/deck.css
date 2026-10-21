@@ -171,8 +171,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* contractor testimonials (slide 5) */
 .ct-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:-6px 0 16px}
-.ct-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-@media(max-width:700px){.ct-grid{grid-template-columns:1fr}}
+.ct-grid{display:grid;grid-template-columns:1fr;gap:20px}
 .ct{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .ct-v{background:#000}
 .ct blockquote{margin:0;padding:14px 16px 4px;font-style:italic;color:#cfd8e0;line-height:1.6;font-size:14px}
@@ -187,3 +186,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* slide 5 content matches the /info/ page content width (900px container − 2×32px padding) */
 .slide[aria-label="Testimonials"] .ct-grid,.slide[aria-label="Testimonials"] .proof{max-width:836px;margin-left:auto;margin-right:auto}
+
+/* slide 5: larger quotes under the single-column videos */
+.slide[aria-label="Testimonials"] .ct blockquote{font-size:18px;color:#e2e8f0;padding:18px 22px 6px}
+.slide[aria-label="Testimonials"] .ct figcaption{font-size:14px;padding:0 22px 18px}
+@media(max-width:600px){.slide[aria-label="Testimonials"] .ct blockquote{font-size:16px;padding:14px 16px 4px}}
