@@ -69,8 +69,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .quote-t{font-family:'Montserrat',sans-serif;font-weight:700;color:var(--cyan);font-size:17px;margin-bottom:8px}
 .quote-q{font-style:italic;color:#cfd8e0;line-height:1.65;font-size:15px}
 .quote-a{margin-top:10px;color:var(--muted);font-size:13px;font-weight:600}
-.proof{columns:2;column-gap:16px}
-@media(max-width:700px){.proof{columns:1}}
+.proof{columns:1}
 .proof img{margin-bottom:16px}
 .proof img{display:block;width:100%;height:auto;margin:0 0 14px;border-radius:10px;border:1px solid var(--line);break-inside:avoid;background:#000}
 .vids{display:grid;grid-template-columns:1fr;gap:18px;max-width:640px;margin:0 auto}
