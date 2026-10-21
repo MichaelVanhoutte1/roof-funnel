@@ -23,6 +23,7 @@ import {
   type LeadInput,
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
+import { leadAlertMessage, postSlack } from "./slack.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -47,6 +48,8 @@ export interface Env {
   APPOINTMENT_TITLE?: string;
   /** "off" disables the pre-booking contact sync (email capture + lead save → GHL contact). */
   GHL_CONTACT_SYNC?: string;
+  /** Slack incoming webhook for #lead-alerts (secret). Unset = no alerts. */
+  SLACK_LEAD_ALERTS_WEBHOOK?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
@@ -399,6 +402,7 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   const qualifiedAnswer = /^Yes/.test(row.capital ?? "");
   ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", { ...leadFields, qualified: qualifiedAnswer }, tracking, country)));
   // Qualified = Yes on capital + at least an email; fired once per lead, preferably now that the phone is here.
+  if (qualifiedAnswer) ctx.waitUntil(slackAlertOnce(env, row, partial, tracking));
   if (qualifiedAnswer && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
@@ -544,6 +548,28 @@ async function relayEvent(env: Env, event: string, payload: Record<string, unkno
     if (!res.ok) console.error("[event]", event, "webhook", res.status, (await res.text().catch(() => "")).slice(0, 200));
   } catch (err) {
     console.error("[event]", event, "webhook failed:", String(err).slice(0, 200));
+  }
+}
+
+/** One #lead-alerts message per qualified lead (Yes on capital), the moment a phone is stored. */
+async function slackAlertOnce(env: Env, row: LeadRow, partial: boolean, tracking: Tracking | undefined): Promise<void> {
+  if (!env.SLACK_LEAD_ALERTS_WEBHOOK) return;
+  const res = await env.DB.prepare(
+    "UPDATE leads SET slack_sent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?1 AND slack_sent_at IS NULL",
+  ).bind(row.id).run();
+  if ((res.meta.changes ?? 0) === 0) return;
+  try {
+    await postSlack(env.SLACK_LEAD_ALERTS_WEBHOOK, leadAlertMessage({
+      id: row.id, name: row.name, phone: row.phone, email: row.email, city: row.city, timeline: row.timeline,
+      business_owner: row.business_owner, capital: row.capital, partial,
+      source: typeof tracking?.utm_source === "string" ? tracking.utm_source : null,
+      campaign: typeof tracking?.utm_campaign === "string" ? tracking.utm_campaign : null,
+    }));
+    console.log("[slack] alert sent for lead", row.id);
+  } catch (err) {
+    // let a later save retry
+    await env.DB.prepare("UPDATE leads SET slack_sent_at = NULL WHERE id = ?1").bind(row.id).run();
+    console.error("[slack] alert failed for lead", row.id, String(err).slice(0, 200));
   }
 }
 
