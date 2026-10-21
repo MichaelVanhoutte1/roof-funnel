@@ -114,7 +114,7 @@
       var bd = q('[data-out="breakdown"]');
       if (bd) {
         bd.innerHTML =
-          '<div class="bd-row"><span>Package Cost (spray + leads)</span><span class="neg">−' + fmt(cost) + '</span></div>' +
+          '<div class="bd-row"><span>Package Cost (spray + appts)</span><span class="neg">−' + fmt(cost) + '</span></div>' +
           '<div class="bd-row"><span>Revenue (' + jobs + ' jobs × ' + fmt(perJob) + ')</span><span class="pos">+' + fmt(revenue) + '</span></div>' +
           '<div class="bd-row total"><span>NET PROFIT FROM REORDER</span><span>' + fmt(net) + '</span></div>';
       }
