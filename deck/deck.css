@@ -184,3 +184,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* breathing room between the rating bar and the testimonials */
 .slide[aria-label="Testimonials"] .trust{margin-bottom:36px}
 .slide[aria-label="Testimonials"] .proof{margin-top:18px}
+
+/* slide 5 content matches the /info/ page content width (900px container − 2×32px padding) */
+.slide[aria-label="Testimonials"] .ct-grid,.slide[aria-label="Testimonials"] .proof{max-width:836px;margin-left:auto;margin-right:auto}
