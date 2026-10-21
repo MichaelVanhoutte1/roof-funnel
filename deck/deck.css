@@ -171,7 +171,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* contractor testimonials (slide 5) */
 .ct-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:-6px 0 16px}
-.ct-grid{display:grid;grid-template-columns:1fr;gap:18px;max-width:640px;margin:0 auto}
+.ct-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:700px){.ct-grid{grid-template-columns:1fr}}
 .ct{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .ct-v{background:#000}
 .ct blockquote{margin:0;padding:14px 16px 4px;font-style:italic;color:#cfd8e0;line-height:1.6;font-size:14px}
