@@ -211,3 +211,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .you-do{margin-top:16px;padding:20px 24px;border-radius:16px;text-align:center;font-family:'Montserrat',sans-serif;font-weight:700;font-size:21px;color:#fff;background:linear-gradient(90deg,rgba(34,197,94,.18),rgba(52,165,203,.18));border:1px solid rgba(34,197,94,.45)}
 .you-do-k{color:var(--green)}
 @media(max-width:640px){.you-do{font-size:18px}}
+
+/* pillar 2: numbered lead path */
+.path{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:26px;position:relative}
+@media(max-width:900px){.path{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.path{grid-template-columns:1fr}}
+.path-step{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px 20px 22px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
+.path-n{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:50%;background:var(--green);color:#07240f;font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center}
+.path-t{font-family:'Montserrat',sans-serif;font-weight:700;font-size:18px;line-height:1.35;color:#fff}
+@media(min-width:901px){.path-step:not(:last-child)::after{content:"";position:absolute;right:-13px;top:50%;width:10px;height:10px;border-top:2px solid var(--green);border-right:2px solid var(--green);transform:translateY(-50%) rotate(45deg);z-index:1}}
