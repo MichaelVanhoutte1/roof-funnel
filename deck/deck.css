@@ -196,12 +196,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* pillar 1: what-you-get tiles */
 .tiles-lead{margin:26px 0 16px;font-size:19px;color:#cfd8e0;text-align:center}
 .tiles-lead b{color:#fff}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
-@media(max-width:860px){.tiles{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:520px){.tiles{grid-template-columns:1fr}}
+.tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;margin-top:26px}
+.tiles>.tile{flex:0 0 calc((100% - 32px)/3);box-sizing:border-box}
+@media(max-width:860px){.tiles>.tile{flex-basis:calc((100% - 16px)/2)}}
+@media(max-width:520px){.tiles>.tile{flex-basis:100%}}
 .tile{display:flex;align-items:center;gap:16px;padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:16px;transition:border-color .15s,transform .15s}
 .tile:hover{border-color:rgba(34,197,94,.45);transform:translateY(-2px)}
 .tile-ic{flex:0 0 52px;width:52px;height:52px;border-radius:14px;background:var(--green-dim);display:flex;align-items:center;justify-content:center}
 .tile-ic svg{width:26px;height:26px;fill:none;stroke:var(--green);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tile-t{font-family:'Montserrat',sans-serif;font-weight:700;font-size:19px;line-height:1.3;color:#fff}
 @media(max-width:640px){.tile-t{font-size:17px}}
+
+/* "what the dealer does" bar under the tiles */
+.you-do{margin-top:16px;padding:20px 24px;border-radius:16px;text-align:center;font-family:'Montserrat',sans-serif;font-weight:700;font-size:21px;color:#fff;background:linear-gradient(90deg,rgba(34,197,94,.18),rgba(52,165,203,.18));border:1px solid rgba(34,197,94,.45)}
+.you-do-k{color:var(--green)}
+@media(max-width:640px){.you-do{font-size:18px}}
