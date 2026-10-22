@@ -219,3 +219,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .path-step{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px 20px 22px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
 .path-n{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:50%;background:var(--green);color:#07240f;font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center}
 .path-t{font-family:'Montserrat',sans-serif;font-weight:700;font-size:18px;line-height:1.35;color:#fff}
+
+.tile-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.tile-s{font-size:14.5px;line-height:1.45;color:var(--muted)}
