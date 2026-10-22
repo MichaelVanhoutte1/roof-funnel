@@ -196,7 +196,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* pillar 1: what-you-get tiles */
 .tiles-lead{margin:26px 0 16px;font-size:19px;color:#cfd8e0;text-align:center}
 .tiles-lead b{color:#fff}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
 @media(max-width:860px){.tiles{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.tiles{grid-template-columns:1fr}}
 .tile{display:flex;align-items:center;gap:16px;padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:16px;transition:border-color .15s,transform .15s}
