@@ -319,3 +319,59 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rr-keep .rr-k{font-size:20px}.rr-keep .rr-v{font-size:38px}
 .rr-note{margin:14px 2px 0;font-size:14px;color:#b8c4cc}
 @media(max-width:520px){.rr-v{font-size:22px}.rr-keep .rr-v{font-size:28px}.rr-k{font-size:15px}}
+
+
+/* ================= REFINED DARK THEME: one background, blue = brand, green = money, more contrast, less glow ================= */
+:root{
+  --bg:#0b141c; --panel:#111c27; --panel2:#0e1822; --line:#22313f;
+  --text:#eef2f6; --muted:#a9b6c3;
+  --cyan:#3aa9d3; --cyan-dim:rgba(58,169,211,.14);
+  --green:#3aa9d3; --green-dim:rgba(58,169,211,.14);   /* accents use the brand blue */
+  --money:#22c55e; --money-dark:#15803d;               /* green only for money you keep */
+  --calc-bg:#0b141c; --calc-panel:#111c27; --calc-line:#22313f;
+}
+html,body,.slide.calc{background:var(--bg)}
+body{color:var(--text)}
+/* contrast on secondary text */
+.tile-s,.media-cap,.ct figcaption,.rr-s,.pk-name,.calc-sub,.rc-k small,.tp-text,#counter{color:var(--muted)!important}
+.pk-meta,.rc-chip,.rr-note,.outcome,.ct blockquote,.slide[aria-label="Testimonials"] .ct blockquote{color:#d6dee6}
+.rc-chip b,.rr-k,.pk-price,.tile-t,.path-t,.deck-h,.pillar h1,.calc-h{color:#fff}
+/* accents: blue */
+.pillar-check{background:var(--cyan);box-shadow:none}
+.pillar-check svg{stroke:#fff}
+.path-n{background:var(--cyan);color:#fff}
+.outcome{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--cyan);border-radius:0 14px 14px 0}
+.outcome b,.extra-h,.rc-row output,.tp-label{color:var(--cyan)}
+.rc-step{background:var(--cyan);color:#fff}
+/* one card style everywhere */
+.tile,.path-step,.ct,.quote,.rc-top,.rc-in,.rc-receipt,.media,.rc-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset,0 8px 24px rgba(0,0,0,.18)}
+.media{border-radius:14px}
+.tile:hover{transform:none;border-color:rgba(58,169,211,.5)}
+/* package cards: calm selected state, no glow */
+.rc-card-pk{background:var(--panel2);border:1px solid var(--line);border-radius:12px;box-shadow:none}
+.rc-card-pk:hover{border-color:rgba(58,169,211,.5)}
+.rc-card-pk.is-on{background:rgba(58,169,211,.10);border-color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.rc-card-pk.is-on .pk-name{color:var(--cyan)!important}
+.rc-switch{background:var(--panel2);border-color:var(--line)}
+.rc-switch button{color:var(--muted)}
+.rc-switch button.is-on{background:var(--cyan);color:#fff}
+.rc-chip{background:var(--panel2);border-color:var(--line)}
+/* sliders: no neon */
+.range{background:#263646}
+.range::-webkit-slider-thumb{background:var(--cyan);border:3px solid var(--bg);box-shadow:0 0 0 2px var(--cyan)}
+.range::-moz-range-thumb{background:var(--cyan);border:3px solid var(--bg)}
+/* money: green, flat, no glow */
+.rr-keep,.rc-hero{background:linear-gradient(135deg,var(--money),var(--money-dark));box-shadow:none;border:0}
+.rr-minus .rr-v{color:#f87171}
+.rr-row{border-bottom-color:var(--line)}
+.extra{border-top-color:var(--line)}
+
+/* phones: calculator back to one column (a later desktop rule had overridden it) */
+@media(max-width:860px){
+  .rc{grid-template-columns:1fr}
+  .rc-top{grid-column:auto}
+  .rc-toprow .rc-switch{min-width:0;width:100%}
+  .rc-receipt{padding:6px 18px 16px}
+}
+.rc>*{min-width:0}
+@media(max-width:900px){.rc-pks{grid-template-columns:1fr}.pk-meta{white-space:normal}}
