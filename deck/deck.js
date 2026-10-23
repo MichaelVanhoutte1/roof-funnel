@@ -130,29 +130,29 @@
     var fmt = function (n) { return "$" + Math.round(n).toLocaleString("en-US"); };
     var mode = "start";
     var roof = document.getElementById("rc-roof"), price = document.getElementById("rc-price");
-    function pills() { return rc.querySelectorAll('.rc-pills[data-mode="' + mode + '"] .rc-pill'); }
-    function current() { var on = rc.querySelector('.rc-pills[data-mode="' + mode + '"] .rc-pill.is-on'); return on || pills()[0]; }
+    function pills() { return rc.querySelectorAll('.rc-pks[data-mode="' + mode + '"] .rc-card-pk'); }
+    function current() { var on = rc.querySelector('.rc-pks[data-mode="' + mode + '"] .rc-card-pk.is-on'); return on || pills()[0]; }
     rc.querySelectorAll(".rc-switch button").forEach(function (b) {
       b.addEventListener("click", function () {
         mode = b.getAttribute("data-mode");
         rc.querySelectorAll(".rc-switch button").forEach(function (x) { var on = x === b; x.classList.toggle("is-on", on); x.setAttribute("aria-selected", on ? "true" : "false"); });
-        rc.querySelectorAll(".rc-pills").forEach(function (g) { g.hidden = g.getAttribute("data-mode") !== mode; });
+        rc.querySelectorAll(".rc-pks").forEach(function (g) { g.hidden = g.getAttribute("data-mode") !== mode; });
         render();
       });
     });
-    rc.querySelectorAll(".rc-pill").forEach(function (p) {
-      p.addEventListener("click", function () { p.parentNode.querySelectorAll(".rc-pill").forEach(function (x) { x.classList.toggle("is-on", x === p); }); render(); });
+    rc.querySelectorAll(".rc-card-pk").forEach(function (p) {
+      p.addEventListener("click", function () { p.parentNode.querySelectorAll(".rc-card-pk").forEach(function (x) { x.classList.toggle("is-on", x === p); }); render(); });
     });
     roof.addEventListener("input", render); price.addEventListener("input", render);
     function render() {
       var pk = current(), cost = +pk.getAttribute("data-price"), appts = +pk.getAttribute("data-appts");
-      var gal = +pk.getAttribute("data-gal"), sqft = +pk.getAttribute("data-sqft"), name = pk.querySelector("span").textContent;
+      var sqft = +pk.getAttribute("data-sqft");
       var r = +roof.value, pr = +price.value;
       var jobs = Math.round(appts * CLOSE), perJob = pr * r, revenue = perJob * jobs, profit = revenue - cost;
-      var be = perJob > 0 ? Math.ceil(cost / perJob) : Infinity, roofs = Math.floor(sqft / r);
+      var be = perJob > 0 ? Math.ceil(cost / perJob) : Infinity;
       document.getElementById("rc-roof-out").textContent = r.toLocaleString("en-US") + " sq ft";
       document.getElementById("rc-price-out").textContent = "$" + pr.toFixed(2);
-      document.getElementById("rc-incl").innerHTML = "<b>" + name + " includes:</b> " + gal + " gallons of product, enough for " + sqft.toLocaleString("en-US") + " sq ft (about " + roofs + " roofs your size), plus " + appts + " booked appointments (about " + jobs + " jobs at a 50% close).";
+      rc.querySelectorAll(".rc-card-pk").forEach(function (c) { c.querySelector(".pk-roofs").textContent = Math.floor(+c.getAttribute("data-sqft") / r); });
       document.getElementById("rc-chip").innerHTML = "Each roof: <b>" + fmt(perJob) + "</b> &nbsp;(" + r.toLocaleString("en-US") + " sq ft × $" + pr.toFixed(2) + ")";
       document.getElementById("rc-invest").textContent = fmt(cost);
       document.getElementById("rc-be").textContent = be <= jobs ? be + (be === 1 ? " job" : " jobs") : jobs + "+ jobs";

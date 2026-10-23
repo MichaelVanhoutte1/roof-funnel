@@ -273,3 +273,22 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 .rc-incl{background:#0b1418;border:1px solid #1d3540;color:#b8c4cc}
 .rc-incl b{color:#fff}
+
+/* calculator v3: packages as a full-width row of cards */
+.rc{grid-template-columns:1.1fr 1fr}
+.rc-top{grid-column:1/-1;background:var(--calc-panel);border:1px solid var(--calc-line);border-radius:18px;padding:22px 24px}
+.rc-toprow{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.rc-toprow .rc-label{margin:0}
+.rc-toprow .rc-switch{margin:0;min-width:300px}
+.rc-pks{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.rc-pks[hidden]{display:none}
+@media(max-width:760px){.rc-pks{grid-template-columns:1fr}.rc-toprow .rc-switch{min-width:0;width:100%}}
+.rc-card-pk{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:18px 20px;border-radius:14px;border:1px solid var(--calc-line);background:#070707;transition:border-color .15s,background .15s,box-shadow .15s}
+.rc-card-pk:hover{border-color:#2d5b6b}
+.rc-card-pk.is-on{border-color:var(--cyan);background:#071217;box-shadow:0 0 0 1px var(--cyan),0 0 26px rgba(52,165,203,.18)}
+.pk-name{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#8a8a8a}
+.rc-card-pk.is-on .pk-name{color:var(--cyan)}
+.pk-price{font-family:'Montserrat',sans-serif;font-weight:900;font-size:28px;color:#fff;margin-bottom:6px}
+.pk-line{font-size:15px;color:#ddd;line-height:1.35}
+.pk-line b{font-weight:600}.pk-line i{font-style:normal;color:#8a8a8a;font-size:13px}
+.pk-small{font-size:12.5px;color:#777}

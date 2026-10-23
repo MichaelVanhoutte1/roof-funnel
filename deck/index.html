@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="deck.css?v=202610231629">
+<link rel="stylesheet" href="deck.css?v=202610231637">
 </head>
 <body>
 <div class="deck">
@@ -106,23 +106,56 @@
   <h1 class="calc-h">ROI Calculator</h1>
   <p class="calc-sub">Pick a package and your pricing. See when you're paid back and what you keep.</p>
   <div class="rc" id="rc">
+    <div class="rc-top">
+      <div class="rc-toprow">
+        <div class="rc-label"><span class="rc-step">1</span>Choose your package</div>
+        <div class="rc-switch" role="tablist" aria-label="Order type">
+          <button type="button" class="is-on" data-mode="start" role="tab" aria-selected="true">Starting out</button>
+          <button type="button" data-mode="reorder" role="tab" aria-selected="false">Reordering</button>
+        </div>
+      </div>
+      <div class="rc-pks" data-mode="start">
+        <button type="button" class="rc-card-pk" data-price="20500" data-appts="14" data-gal="15" data-sqft="18000">
+          <span class="pk-name">Beginner</span><span class="pk-price">$20,500</span>
+          <span class="pk-line"><b>14 booked appointments</b> <i>≈ 7 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">7</span> roofs</b></span>
+          <span class="pk-small">15 gal · covers 18,000 sq ft</span>
+        </button>
+        <button type="button" class="rc-card-pk is-on" data-price="30000" data-appts="42" data-gal="45" data-sqft="54000">
+          <span class="pk-name">Growth</span><span class="pk-price">$30,000</span>
+          <span class="pk-line"><b>42 booked appointments</b> <i>≈ 21 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">21</span> roofs</b></span>
+          <span class="pk-small">45 gal · covers 54,000 sq ft</span>
+        </button>
+        <button type="button" class="rc-card-pk" data-price="45000" data-appts="84" data-gal="90" data-sqft="108000">
+          <span class="pk-name">Scale</span><span class="pk-price">$45,000</span>
+          <span class="pk-line"><b>84 booked appointments</b> <i>≈ 42 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">43</span> roofs</b></span>
+          <span class="pk-small">90 gal · covers 108,000 sq ft</span>
+        </button>
+      </div>
+      <div class="rc-pks" data-mode="reorder" hidden>
+        <button type="button" class="rc-card-pk" data-price="10758" data-appts="14" data-gal="15" data-sqft="18000">
+          <span class="pk-name">Quick Restock</span><span class="pk-price">$10,758</span>
+          <span class="pk-line"><b>14 booked appointments</b> <i>≈ 7 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">7</span> roofs</b></span>
+          <span class="pk-small">15 gal · covers 18,000 sq ft</span>
+        </button>
+        <button type="button" class="rc-card-pk is-on" data-price="22834" data-appts="42" data-gal="45" data-sqft="54000">
+          <span class="pk-name">Growth</span><span class="pk-price">$22,834</span>
+          <span class="pk-line"><b>42 booked appointments</b> <i>≈ 21 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">21</span> roofs</b></span>
+          <span class="pk-small">45 gal · covers 54,000 sq ft</span>
+        </button>
+        <button type="button" class="rc-card-pk" data-price="35742" data-appts="84" data-gal="90" data-sqft="108000">
+          <span class="pk-name">Full Scale</span><span class="pk-price">$35,742</span>
+          <span class="pk-line"><b>84 booked appointments</b> <i>≈ 42 jobs</i></span>
+          <span class="pk-line"><b>Product for ~<span class="pk-roofs">43</span> roofs</b></span>
+          <span class="pk-small">90 gal · covers 108,000 sq ft</span>
+        </button>
+      </div>
+    </div>
     <div class="rc-in">
-      <div class="rc-switch" role="tablist" aria-label="Order type">
-        <button type="button" class="is-on" data-mode="start" role="tab" aria-selected="true">Starting out</button>
-        <button type="button" data-mode="reorder" role="tab" aria-selected="false">Reordering</button>
-      </div>
-      <div class="rc-label"><span class="rc-step">1</span>Choose your package</div>
-      <div class="rc-pills" data-mode="start">
-        <button type="button" data-gal="15" data-sqft="18000" class="rc-pill" data-price="20500" data-appts="14"><span>Beginner</span><b>$20,500</b></button>
-        <button type="button" data-gal="45" data-sqft="54000" class="rc-pill is-on" data-price="30000" data-appts="42"><span>Growth</span><b>$30,000</b></button>
-        <button type="button" data-gal="90" data-sqft="108000" class="rc-pill" data-price="45000" data-appts="84"><span>Scale</span><b>$45,000</b></button>
-      </div>
-      <div class="rc-pills" data-mode="reorder" hidden>
-        <button type="button" data-gal="15" data-sqft="18000" class="rc-pill" data-price="10758" data-appts="14"><span>Quick Restock</span><b>$10,758</b></button>
-        <button type="button" data-gal="45" data-sqft="54000" class="rc-pill is-on" data-price="22834" data-appts="42"><span>Growth</span><b>$22,834</b></button>
-        <button type="button" data-gal="90" data-sqft="108000" class="rc-pill" data-price="35742" data-appts="84"><span>Full Scale</span><b>$35,742</b></button>
-      </div>
-      <div class="rc-incl" id="rc-incl"></div>
       <div class="rc-row"><label for="rc-roof"><span class="rc-step">2</span>Your average roof size</label><output id="rc-roof-out">2,500 sq ft</output></div>
       <input class="range" type="range" id="rc-roof" min="1500" max="4000" step="100" value="2500">
       <div class="rc-row"><label for="rc-price"><span class="rc-step">3</span>Your price per sq ft</label><output id="rc-price-out">$1.50</output></div>
@@ -140,6 +173,6 @@
   </main>
 </div>
 <div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Enlarged image"><button type="button" class="lb-close" id="lb-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div id="lb-body"></div></div>
-<script src="deck.js?v=202610231629" defer></script>
+<script src="deck.js?v=202610231637" defer></script>
 </body>
 </html>
