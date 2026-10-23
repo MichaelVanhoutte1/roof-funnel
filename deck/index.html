@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="deck.css?v=202610231504">
+<link rel="stylesheet" href="deck.css?v=202610231509">
 </head>
 <body>
 <div class="deck">
@@ -102,65 +102,44 @@
 </section>
 <section class="slide calc" data-title="ROI calculators" aria-label="ROI calculators">
 <div class="slide-inner">
-  <div id="calc-startup">
-    <div class="calc-brand"><img src="../assets/logo-start-white-text.png" alt="Start Roof Rejuvenating" class="calc-logo"></div>
-    <h1 class="calc-h">Startup ROI Calculator</h1>
-    <p class="calc-sub">See what your initial investment gets you and what you'll make.</p>
-    <div class="card"><div class="card-h">1. Choose your startup package</div><div class="pkgs">
-      <button type="button" class="pkg" data-price="20500" data-leads="14" data-gal="15" data-sqft="18000" aria-pressed="false">
-      <div class="pkg-tier">Low end</div><div class="pkg-name">Beginner Start-up</div><div class="pkg-meta">15 gal · 18,000 sq ft · 14 appts</div><div class="pkg-price">$20,500</div>
-      </button>
-      <button type="button" class="pkg is-selected" data-price="30000" data-leads="42" data-gal="45" data-sqft="54000" aria-pressed="true">
-      <div class="pkg-tier">Mid range</div><div class="pkg-name">Growth Start-up</div><div class="pkg-meta">45 gal · 54,000 sq ft · 42 appts</div><div class="pkg-price">$30,000</div>
-      </button>
-      <button type="button" class="pkg" data-price="45000" data-leads="84" data-gal="90" data-sqft="108000" aria-pressed="false">
-      <div class="pkg-tier">High end</div><div class="pkg-name">Scale Start-up</div><div class="pkg-meta">90 gal · 108,000 sq ft · 84 appts</div><div class="pkg-price">$45,000</div>
-      </button>
-    </div></div>
-    <div class="card"><div class="card-h">2. Your pricing</div>
-    <div class="row"><label for="su-price">What you charge per sq ft</label><output data-out="price">$1.50</output></div>
-    <input class="range" type="range" id="su-price" data-role="price" min="0.5" max="3" step="0.05" value="1.5">
-    <div class="ticks"><span>$0.50 commercial</span><span>$1.50 avg</span><span>$3.00 premium</span></div>
-    <div class="row"><label for="su-roof">Average roof size</label><output data-out="roof">2,500 sq ft</output></div>
-    <input class="range" type="range" id="su-roof" data-role="roof" min="1500" max="4000" step="100" value="2500">
-    <div class="ticks"><span>1,500 small</span><span>2,500 avg</span><span>4,000 large</span></div>
-    
-  </div>
-    <div class="card hl"><div class="card-h">3. Your return</div>
-    <div class="trio"><div class="stat red"><div class="stat-l">You invest</div><div class="stat-v" data-out="invest">$30,000</div></div><div class="arrow">→</div><div class="stat cyan"><div class="stat-l">Recoup after</div><div class="stat-v" data-out="recoup">9 jobs</div></div><div class="arrow">→</div><div class="stat green"><div class="stat-l">You make</div><div class="stat-v" data-out="make">$56,350</div><div class="stat-s" data-out="make-sub">net profit from 21 jobs</div></div></div>
-    <div class="be"><div class="be-l"><span>Breakeven</span><span data-out="be-label"></span></div><div class="be-bar"><div class="be-fill" data-out="be-fill"></div></div></div>
-    <div class="note" data-out="remaining"></div>
-    <div class="note neutral" data-out="summary"></div>
-  </div>
-  </div>
-
-  <div id="calc-reorder" class="calc-split">
-    <h1 class="calc-h">Reorder ROI Calculator</h1>
-    <p class="calc-sub">Your initial investment is recouped. Here's what it costs to keep going — using the pricing and roof size you set above.</p>
-    <div class="card"><div class="card-h">1. Choose your reorder package</div><div class="pkgs">
-      <button type="button" class="pkg" data-price="10758" data-leads="14" data-gal="15" data-sqft="18000" aria-pressed="false">
-      <div class="pkg-tier">Essential</div><div class="pkg-name">Quick Restock</div><div class="pkg-meta">15 gal · 18,000 sq ft · 14 appts</div><div class="pkg-price">$10,758</div>
-      <div class="pkg-note">14 appts (50% close → 7 jobs)</div></button>
-      <button type="button" class="pkg is-selected" data-price="22834" data-leads="42" data-gal="45" data-sqft="54000" aria-pressed="true">
-      <div class="pkg-tier">Professional</div><div class="pkg-name">Growth Reorder</div><div class="pkg-meta">45 gal · 54,000 sq ft · 42 appts</div><div class="pkg-price">$22,834</div>
-      <div class="pkg-note">42 appts (50% close → 21 jobs)</div></button>
-      <button type="button" class="pkg" data-price="35742" data-leads="84" data-gal="90" data-sqft="108000" aria-pressed="false">
-      <div class="pkg-tier">Enterprise</div><div class="pkg-name">Full Scale</div><div class="pkg-meta">90 gal · 108,000 sq ft · 84 appts</div><div class="pkg-price">$35,742</div>
-      <div class="pkg-note">84 appts (50% close → 42 jobs)</div></button>
-    </div></div>
-        <div class="card hl"><div class="card-h">2. Your return</div>
-    <div class="trio"><div class="stat red"><div class="stat-l">You invest</div><div class="stat-v" data-out="invest">$22,834</div></div><div class="arrow">→</div><div class="stat cyan"><div class="stat-l">Recoup after</div><div class="stat-v" data-out="recoup">7 jobs</div></div><div class="arrow">→</div><div class="stat green"><div class="stat-l">You make</div><div class="stat-v" data-out="make">$94,500</div><div class="stat-s" data-out="make-sub">from 21 jobs</div></div></div>
-    <div class="be"><div class="be-l"><span>Breakeven</span><span data-out="be-label"></span></div><div class="be-bar"><div class="be-fill" data-out="be-fill"></div></div></div>
-    <div class="note" data-out="remaining"></div>
-    <div class="note neutral" data-out="summary"></div>
-  </div>
-    <div class="card"><div class="card-h">3. Reorder breakdown</div><div class="bd" data-out="breakdown"></div></div>
+  <div class="calc-brand"><img src="../assets/logo-start-white-text.png" alt="Start Roof Rejuvenating" class="calc-logo"></div>
+  <h1 class="calc-h">ROI Calculator</h1>
+  <p class="calc-sub">Pick a package and your pricing. See when you're paid back and what you keep.</p>
+  <div class="rc" id="rc">
+    <div class="rc-in">
+      <div class="rc-switch" role="tablist" aria-label="Order type">
+        <button type="button" class="is-on" data-mode="start" role="tab" aria-selected="true">Starting out</button>
+        <button type="button" data-mode="reorder" role="tab" aria-selected="false">Reordering</button>
+      </div>
+      <div class="rc-label">Package</div>
+      <div class="rc-pills" data-mode="start">
+        <button type="button" class="rc-pill" data-price="20500" data-appts="14"><span>Beginner</span><b>$20,500</b></button>
+        <button type="button" class="rc-pill is-on" data-price="30000" data-appts="42"><span>Growth</span><b>$30,000</b></button>
+        <button type="button" class="rc-pill" data-price="45000" data-appts="84"><span>Scale</span><b>$45,000</b></button>
+      </div>
+      <div class="rc-pills" data-mode="reorder" hidden>
+        <button type="button" class="rc-pill" data-price="10758" data-appts="14"><span>Quick Restock</span><b>$10,758</b></button>
+        <button type="button" class="rc-pill is-on" data-price="22834" data-appts="42"><span>Growth</span><b>$22,834</b></button>
+        <button type="button" class="rc-pill" data-price="35742" data-appts="84"><span>Full Scale</span><b>$35,742</b></button>
+      </div>
+      <div class="rc-row"><label for="rc-roof">Average roof size</label><output id="rc-roof-out">2,500 sq ft</output></div>
+      <input class="range" type="range" id="rc-roof" min="1500" max="4000" step="100" value="2500">
+      <div class="rc-row"><label for="rc-price">Price / sq ft</label><output id="rc-price-out">$1.50</output></div>
+      <input class="range" type="range" id="rc-price" min="0.5" max="3" step="0.05" value="1.5">
+      <div class="rc-chip" id="rc-chip"></div>
+    </div>
+    <div class="rc-out">
+      <div class="rc-card"><span class="rc-ic rc-ic-red"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></span><span class="rc-k">You invest</span><span class="rc-v" id="rc-invest">$30,000</span></div>
+      <div class="rc-card"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/></svg></span><span class="rc-k">Break even after</span><span class="rc-v" id="rc-be">8 jobs</span></div>
+      <div class="rc-card rc-hero"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span class="rc-k">Your profit<small id="rc-roi"></small></span><span class="rc-v" id="rc-profit">$48,750</span></div>
+      <p class="rc-note" id="rc-note"></p>
+    </div>
   </div>
 </div>
 </section>
   </main>
 </div>
 <div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Enlarged image"><button type="button" class="lb-close" id="lb-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div id="lb-body"></div></div>
-<script src="deck.js?v=202610231504" defer></script>
+<script src="deck.js?v=202610231509" defer></script>
 </body>
 </html>
