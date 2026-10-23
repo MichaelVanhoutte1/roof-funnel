@@ -306,3 +306,16 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rc-switch button{padding:8px 8px;font-size:13px}
 .pk-meta{font-size:13.5px;color:#b8c4cc;white-space:nowrap}
 .rc-card-pk.is-on .pk-meta{color:#d7eef7}
+
+/* results as a receipt: make − invest = keep */
+.rc-receipt{background:var(--calc-panel);border:1px solid var(--calc-line);border-radius:18px;padding:10px 24px 18px;gap:0}
+.rr-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;border-bottom:1px solid var(--calc-line)}
+.rr-row>div{display:flex;flex-direction:column;gap:3px}
+.rr-k{font-family:'Montserrat',sans-serif;font-weight:700;font-size:17px;color:#fff}
+.rr-s{font-size:13px;color:#8a8a8a}
+.rr-v{font-family:'Montserrat',sans-serif;font-weight:900;font-size:30px;color:#fff;white-space:nowrap}
+.rr-minus .rr-v{color:#f26b6b}
+.rr-keep{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:22px 22px;border-radius:14px;background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 10px 36px rgba(34,197,94,.25)}
+.rr-keep .rr-k{font-size:20px}.rr-keep .rr-v{font-size:38px}
+.rr-note{margin:14px 2px 0;font-size:14px;color:#b8c4cc}
+@media(max-width:520px){.rr-v{font-size:22px}.rr-keep .rr-v{font-size:28px}.rr-k{font-size:15px}}

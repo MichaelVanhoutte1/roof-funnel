@@ -153,10 +153,16 @@
       document.getElementById("rc-roof-out").textContent = r.toLocaleString("en-US") + " sq ft";
       document.getElementById("rc-price-out").textContent = "$" + pr.toFixed(2);
       document.getElementById("rc-chip").innerHTML = "Each roof: <b>" + fmt(perJob) + "</b> &nbsp;(" + r.toLocaleString("en-US") + " sq ft × $" + pr.toFixed(2) + ")";
-      document.getElementById("rc-invest").textContent = fmt(cost);
-      document.getElementById("rc-be").textContent = be <= jobs ? be + (be === 1 ? " job" : " jobs") : jobs + "+ jobs";
+      var name = pk.querySelector(".pk-name").textContent;
+      document.getElementById("rr-jobs").textContent = jobs;
+      document.getElementById("rr-rev").textContent = fmt(revenue);
+      document.getElementById("rr-rev-sub").textContent = jobs + " jobs × " + fmt(perJob);
+      document.getElementById("rr-pkg").textContent = name + " package";
+      document.getElementById("rc-invest").textContent = "− " + fmt(cost);
       document.getElementById("rc-profit").textContent = (profit < 0 ? "−" : "") + fmt(Math.abs(profit));
-      document.getElementById("rc-profit-expl").textContent = "After all " + jobs + " jobs, minus the package · " + (cost > 0 ? Math.round(profit / cost * 100) : 0) + "% ROI";
+      document.getElementById("rc-be-line").textContent = be <= jobs
+        ? "Paid back by job " + be + ". Everything after that is profit."
+        : "Not paid back within this package at these prices. Raise your price or roof size.";
     }
     render();
   })();

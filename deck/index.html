@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="deck.css?v=202610231647">
+<link rel="stylesheet" href="deck.css?v=202610231654">
 </head>
 <body>
 <div class="deck">
@@ -150,10 +150,11 @@
       <input class="range" type="range" id="rc-price" min="0.5" max="3" step="0.05" value="1.5">
       <div class="rc-chip" id="rc-chip"></div>
     </div>
-    <div class="rc-out">
-      <div class="rc-card"><span class="rc-ic rc-ic-red"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></span><span class="rc-k">You invest<small>The package price, product and appointments included</small></span><span class="rc-v" id="rc-invest">$30,000</span></div>
-      <div class="rc-card"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/></svg></span><span class="rc-k">Break even after<small>Jobs until your investment is paid back</small></span><span class="rc-v" id="rc-be">8 jobs</span></div>
-      <div class="rc-card rc-hero"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span class="rc-k">Your profit<small id="rc-profit-expl"></small></span><span class="rc-v" id="rc-profit">$48,750</span></div>
+    <div class="rc-out rc-receipt">
+      <div class="rr-row"><div><span class="rr-k">You make from <span id="rr-jobs">21</span> jobs</span><span class="rr-s" id="rr-rev-sub">21 jobs × $3,750</span></div><span class="rr-v" id="rr-rev">$78,750</span></div>
+      <div class="rr-row rr-minus"><div><span class="rr-k">Minus your investment</span><span class="rr-s" id="rr-pkg">Growth package</span></div><span class="rr-v" id="rc-invest">− $30,000</span></div>
+      <div class="rr-keep"><span class="rr-k">You keep</span><span class="rr-v" id="rc-profit">$48,750</span></div>
+      <p class="rr-note" id="rc-be-line">Paid back by job 8. Everything after that is profit.</p>
     </div>
   </div>
 </div>
@@ -161,6 +162,6 @@
   </main>
 </div>
 <div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Enlarged image"><button type="button" class="lb-close" id="lb-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div id="lb-body"></div></div>
-<script src="deck.js?v=202610231647" defer></script>
+<script src="deck.js?v=202610231654" defer></script>
 </body>
 </html>
