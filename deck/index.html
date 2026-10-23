@@ -10,12 +10,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="deck.css?v=202610231511">
+<link rel="stylesheet" href="deck.css?v=202610231625">
 </head>
 <body>
 <div class="deck">
   <header class="bar">
-    <div class="bar-brand"><img src="../assets/logo-start-white-text.png" alt="Start Roof Rejuvenating" class="bar-logo"></div>
+    <div class="bar-brand"><img src="../assets/logo-start-dark-text.png" alt="Start Roof Rejuvenating" class="bar-logo"></div>
     <nav class="bar-nav" aria-label="Slides">
       <button type="button" id="prev" aria-label="Previous slide"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
       <button type="button" id="next" aria-label="Next slide"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
@@ -102,7 +102,7 @@
 </section>
 <section class="slide calc" data-title="ROI calculators" aria-label="ROI calculators">
 <div class="slide-inner">
-  <div class="calc-brand"><img src="../assets/logo-start-white-text.png" alt="Start Roof Rejuvenating" class="calc-logo"></div>
+  <div class="calc-brand"><img src="../assets/logo-start-dark-text.png" alt="Start Roof Rejuvenating" class="calc-logo"></div>
   <h1 class="calc-h">ROI Calculator</h1>
   <p class="calc-sub">Pick a package and your pricing. See when you're paid back and what you keep.</p>
   <div class="rc" id="rc">
@@ -111,28 +111,28 @@
         <button type="button" class="is-on" data-mode="start" role="tab" aria-selected="true">Starting out</button>
         <button type="button" data-mode="reorder" role="tab" aria-selected="false">Reordering</button>
       </div>
-      <div class="rc-label">Package</div>
+      <div class="rc-label"><span class="rc-step">1</span>Choose your package</div>
       <div class="rc-pills" data-mode="start">
-        <button type="button" class="rc-pill" data-price="20500" data-appts="14"><span>Beginner</span><b>$20,500</b><em>15 gal · 18,000 sq ft</em><em>14 appts</em></button>
-        <button type="button" class="rc-pill is-on" data-price="30000" data-appts="42"><span>Growth</span><b>$30,000</b><em>45 gal · 54,000 sq ft</em><em>42 appts</em></button>
-        <button type="button" class="rc-pill" data-price="45000" data-appts="84"><span>Scale</span><b>$45,000</b><em>90 gal · 108,000 sq ft</em><em>84 appts</em></button>
+        <button type="button" data-gal="15" data-sqft="18000" class="rc-pill" data-price="20500" data-appts="14"><span>Beginner</span><b>$20,500</b></button>
+        <button type="button" data-gal="45" data-sqft="54000" class="rc-pill is-on" data-price="30000" data-appts="42"><span>Growth</span><b>$30,000</b></button>
+        <button type="button" data-gal="90" data-sqft="108000" class="rc-pill" data-price="45000" data-appts="84"><span>Scale</span><b>$45,000</b></button>
       </div>
       <div class="rc-pills" data-mode="reorder" hidden>
-        <button type="button" class="rc-pill" data-price="10758" data-appts="14"><span>Quick Restock</span><b>$10,758</b><em>15 gal · 18,000 sq ft</em><em>14 appts</em></button>
-        <button type="button" class="rc-pill is-on" data-price="22834" data-appts="42"><span>Growth</span><b>$22,834</b><em>45 gal · 54,000 sq ft</em><em>42 appts</em></button>
-        <button type="button" class="rc-pill" data-price="35742" data-appts="84"><span>Full Scale</span><b>$35,742</b><em>90 gal · 108,000 sq ft</em><em>84 appts</em></button>
+        <button type="button" data-gal="15" data-sqft="18000" class="rc-pill" data-price="10758" data-appts="14"><span>Quick Restock</span><b>$10,758</b></button>
+        <button type="button" data-gal="45" data-sqft="54000" class="rc-pill is-on" data-price="22834" data-appts="42"><span>Growth</span><b>$22,834</b></button>
+        <button type="button" data-gal="90" data-sqft="108000" class="rc-pill" data-price="35742" data-appts="84"><span>Full Scale</span><b>$35,742</b></button>
       </div>
-      <div class="rc-row"><label for="rc-roof">Average roof size</label><output id="rc-roof-out">2,500 sq ft</output></div>
+      <div class="rc-incl" id="rc-incl"></div>
+      <div class="rc-row"><label for="rc-roof"><span class="rc-step">2</span>Your average roof size</label><output id="rc-roof-out">2,500 sq ft</output></div>
       <input class="range" type="range" id="rc-roof" min="1500" max="4000" step="100" value="2500">
-      <div class="rc-row"><label for="rc-price">Price / sq ft</label><output id="rc-price-out">$1.50</output></div>
+      <div class="rc-row"><label for="rc-price"><span class="rc-step">3</span>Your price per sq ft</label><output id="rc-price-out">$1.50</output></div>
       <input class="range" type="range" id="rc-price" min="0.5" max="3" step="0.05" value="1.5">
       <div class="rc-chip" id="rc-chip"></div>
     </div>
     <div class="rc-out">
-      <div class="rc-card"><span class="rc-ic rc-ic-red"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></span><span class="rc-k">You invest</span><span class="rc-v" id="rc-invest">$30,000</span></div>
-      <div class="rc-card"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/></svg></span><span class="rc-k">Break even after</span><span class="rc-v" id="rc-be">8 jobs</span></div>
-      <div class="rc-card rc-hero"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span class="rc-k">Your profit<small id="rc-roi"></small></span><span class="rc-v" id="rc-profit">$48,750</span></div>
-      <p class="rc-note" id="rc-note"></p>
+      <div class="rc-card"><span class="rc-ic rc-ic-red"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></span><span class="rc-k">You invest<small>The package price, product and appointments included</small></span><span class="rc-v" id="rc-invest">$30,000</span></div>
+      <div class="rc-card"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/></svg></span><span class="rc-k">Break even after<small>Jobs until your investment is paid back</small></span><span class="rc-v" id="rc-be">8 jobs</span></div>
+      <div class="rc-card rc-hero"><span class="rc-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span class="rc-k">Your profit<small id="rc-profit-expl"></small></span><span class="rc-v" id="rc-profit">$48,750</span></div>
     </div>
   </div>
 </div>
@@ -140,6 +140,6 @@
   </main>
 </div>
 <div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Enlarged image"><button type="button" class="lb-close" id="lb-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div id="lb-body"></div></div>
-<script src="deck.js?v=202610231511" defer></script>
+<script src="deck.js?v=202610231625" defer></script>
 </body>
 </html>

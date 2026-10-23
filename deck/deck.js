@@ -146,16 +146,18 @@
     roof.addEventListener("input", render); price.addEventListener("input", render);
     function render() {
       var pk = current(), cost = +pk.getAttribute("data-price"), appts = +pk.getAttribute("data-appts");
-      var jobs = Math.round(appts * CLOSE), perJob = +price.value * +roof.value, revenue = perJob * jobs, profit = revenue - cost;
-      var be = perJob > 0 ? Math.ceil(cost / perJob) : Infinity;
-      document.getElementById("rc-roof-out").textContent = (+roof.value).toLocaleString("en-US") + " sq ft";
-      document.getElementById("rc-price-out").textContent = "$" + (+price.value).toFixed(2);
-      document.getElementById("rc-chip").innerHTML = "Revenue per job: <b>" + fmt(perJob) + "</b> &nbsp;·&nbsp; " + appts + " appts → <b>" + jobs + " jobs</b> at a 50% close";
+      var gal = +pk.getAttribute("data-gal"), sqft = +pk.getAttribute("data-sqft"), name = pk.querySelector("span").textContent;
+      var r = +roof.value, pr = +price.value;
+      var jobs = Math.round(appts * CLOSE), perJob = pr * r, revenue = perJob * jobs, profit = revenue - cost;
+      var be = perJob > 0 ? Math.ceil(cost / perJob) : Infinity, roofs = Math.floor(sqft / r);
+      document.getElementById("rc-roof-out").textContent = r.toLocaleString("en-US") + " sq ft";
+      document.getElementById("rc-price-out").textContent = "$" + pr.toFixed(2);
+      document.getElementById("rc-incl").innerHTML = "<b>" + name + " includes:</b> " + gal + " gallons of product, enough for " + sqft.toLocaleString("en-US") + " sq ft (about " + roofs + " roofs your size), plus " + appts + " booked appointments (about " + jobs + " jobs at a 50% close).";
+      document.getElementById("rc-chip").innerHTML = "Each roof: <b>" + fmt(perJob) + "</b> &nbsp;(" + r.toLocaleString("en-US") + " sq ft × $" + pr.toFixed(2) + ")";
       document.getElementById("rc-invest").textContent = fmt(cost);
       document.getElementById("rc-be").textContent = be <= jobs ? be + (be === 1 ? " job" : " jobs") : jobs + "+ jobs";
       document.getElementById("rc-profit").textContent = (profit < 0 ? "−" : "") + fmt(Math.abs(profit));
-      document.getElementById("rc-roi").textContent = cost > 0 ? Math.round(profit / cost * 100) + "% ROI" : "";
-      document.getElementById("rc-note").textContent = "From " + jobs + " jobs: " + fmt(revenue) + " revenue − " + fmt(cost) + " package";
+      document.getElementById("rc-profit-expl").textContent = "After all " + jobs + " jobs, minus the package · " + (cost > 0 ? Math.round(profit / cost * 100) : 0) + "% ROI";
     }
     render();
   })();
