@@ -260,3 +260,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rc-hero{background:linear-gradient(135deg,#16a34a,#15803d);border-color:#22c55e;box-shadow:0 10px 40px rgba(34,197,94,.25)}
 .rc-hero .rc-k{color:#e6ffee}.rc-hero .rc-ic{background:rgba(255,255,255,.18)}.rc-hero .rc-ic svg{stroke:#fff}
 .rc-note{margin:2px 4px 0;font-size:12.5px;color:#777;text-align:right}
+
+.rc-pill em{font-style:normal;font-size:11.5px;line-height:1.35;color:#8a8a8a;white-space:nowrap}
+.rc-pill b{margin-bottom:3px}
+.rc-pill.is-on em{color:#b9dbe6}
+@media(max-width:420px){.rc-pill em{font-size:10.5px}}
