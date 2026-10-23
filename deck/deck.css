@@ -375,3 +375,15 @@ body{color:var(--text)}
 }
 .rc>*{min-width:0}
 @media(max-width:900px){.rc-pks{grid-template-columns:1fr}.pk-meta{white-space:normal}}
+
+/* green accents back (pillar checks, tile icons, step numbers, outcome labels, section headings, slider values) */
+:root{--green:#22c55e;--green-dim:rgba(34,197,94,.14)}
+.pillar-check{background:var(--green)}
+.pillar-check svg{stroke:#07240f}
+.path-n{background:var(--green);color:#07240f}
+.tile-ic{background:var(--green-dim)}
+.tile-ic svg{stroke:var(--green)}
+.outcome{border-left-color:var(--green)}
+.outcome b,.extra-h{color:var(--green)}
+.rc-row output{color:#4ade80}
+.tile:hover{border-color:rgba(34,197,94,.45)}
