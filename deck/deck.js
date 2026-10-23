@@ -152,7 +152,6 @@
       var be = perJob > 0 ? Math.ceil(cost / perJob) : Infinity;
       document.getElementById("rc-roof-out").textContent = r.toLocaleString("en-US") + " sq ft";
       document.getElementById("rc-price-out").textContent = "$" + pr.toFixed(2);
-      rc.querySelectorAll(".rc-card-pk").forEach(function (c) { c.querySelector(".pk-roofs").textContent = Math.floor(+c.getAttribute("data-sqft") / r); });
       document.getElementById("rc-chip").innerHTML = "Each roof: <b>" + fmt(perJob) + "</b> &nbsp;(" + r.toLocaleString("en-US") + " sq ft × $" + pr.toFixed(2) + ")";
       document.getElementById("rc-invest").textContent = fmt(cost);
       document.getElementById("rc-be").textContent = be <= jobs ? be + (be === 1 ? " job" : " jobs") : jobs + "+ jobs";

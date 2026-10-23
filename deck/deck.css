@@ -292,3 +292,17 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .pk-line{font-size:15px;color:#ddd;line-height:1.35}
 .pk-line b{font-weight:600}.pk-line i{font-style:normal;color:#8a8a8a;font-size:13px}
 .pk-small{font-size:12.5px;color:#777}
+
+/* compact package cards */
+.rc-top{padding:16px 20px}
+.rc-toprow{margin-bottom:12px}
+.rc-pks{gap:10px}
+.rc-card-pk{gap:2px;padding:12px 16px;border-radius:12px}
+.pk-name{font-size:11px}
+.pk-price{font-size:21px;margin-bottom:4px}
+.pk-line{font-size:13.5px;line-height:1.4}
+.pk-line i{font-size:12px}
+.pk-small{font-size:11.5px;margin-top:1px}
+.rc-switch button{padding:8px 8px;font-size:13px}
+.pk-meta{font-size:13.5px;color:#b8c4cc;white-space:nowrap}
+.rc-card-pk.is-on .pk-meta{color:#d7eef7}
