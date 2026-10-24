@@ -20,8 +20,9 @@ ALLOWED_COUNTRIES = "US,CA"
 GHL_LOCATION_ID = "w3MPokDbxpSGUIzrT0By"
 GHL_CALENDAR_ID = "4ZXhsZUJmr9HmX2fB0Wo"
 APPOINTMENT_TITLE = "Dealer Strategy Session"
-# Pre-booking GHL contact sync. "off" = Cortana creates contacts from the webhooks; booking still upserts its own.
-GHL_CONTACT_SYNC = "off"
+# GHL contact sync: "qualified" = every qualified lead becomes a GHL contact as soon as its phone is stored
+# (answers in custom fields, tags funnel-application + qualified). "off" / "all" also supported.
+GHL_CONTACT_SYNC = "qualified"
 # Cortana step webhooks, relayed server-side by POST /event (step events) and by the lead handlers
 # (phone = stored lead). Keys are the event names the survey sends.
 CORTANA_WEBHOOKS = """{

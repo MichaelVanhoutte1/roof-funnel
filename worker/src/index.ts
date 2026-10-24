@@ -428,9 +428,14 @@ async function handleExport(request: Request, env: Env): Promise<Response> {
 
 /* ---------------- GHL contact sync (email first, phone when it arrives) ---------------- */
 
+/** GHL_CONTACT_SYNC: "off" = never, "qualified" = qualified leads with a phone (default), "all" = every capture. */
+function syncMode(env: Env): "off" | "qualified" | "all" {
+  const m = (env.GHL_CONTACT_SYNC ?? "qualified").toLowerCase();
+  return m === "off" || m === "all" ? m : "qualified";
+}
+
 function contactsConfig(env: Env): ContactsConfig | null {
-  // GHL_CONTACT_SYNC = "off": Cortana owns contact creation; the funnel only writes the contact at booking time.
-  if ((env.GHL_CONTACT_SYNC ?? "").toLowerCase() === "off") return null;
+  if (syncMode(env) === "off") return null;
   if (!env.GHL_PIT || !env.GHL_LOCATION_ID) return null;
   return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID };
 }
@@ -439,6 +444,7 @@ function contactsConfig(env: Env): ContactsConfig | null {
 async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined): Promise<void> {
   const cfg = contactsConfig(env);
   if (!cfg) return;
+  if (syncMode(env) === "qualified" && !/^Yes/.test(row.capital ?? "")) return; // only qualified leads go to GHL
   try {
     const id = await upsertSurveyContact(cfg, {
       name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
@@ -488,7 +494,7 @@ async function handleEmailCapture(request: Request, env: Env, ctx: ExecutionCont
   ).bind(email, input.name ?? null, input.city ?? null, input.timeline ?? null, input.business_owner ?? null, input.capital ?? null,
          tracking ? JSON.stringify(tracking) : null, ip, country).run();
   console.log("[contact] email capture", maskName(name), maskEmail(email), "country:", country);
-  const cfg = contactsConfig(env);
+  const cfg = syncMode(env) === "all" ? contactsConfig(env) : null; // email-only captures reach GHL only in "all" mode
   if (cfg) ctx.waitUntil((async () => {
     try {
       const id = await upsertSurveyContact(cfg, {
