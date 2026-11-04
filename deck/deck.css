@@ -387,3 +387,49 @@ body{color:var(--text)}
 .outcome b,.extra-h{color:var(--green)}
 .rc-row output{color:#4ade80}
 .tile:hover{border-color:rgba(34,197,94,.45)}
+
+/* ================= HARBOR LIGHT THEME (2026-11-04): light blue-grey page, white cards, navy headings, brand blue buttons, green = money ================= */
+:root{--bg:#EEF4F8;--panel:#FFFFFF;--panel2:#F6F9FB;--line:#D3DFE8;--text:#28394A;--muted:#5B6E7E;--heading:#0B2538;--cyan:#0E7FA6;--cyan-dim:#DCEBF3;--green:#16a34a;--green-dim:rgba(22,163,74,.14);--money:#16a34a;--money-dark:#15803d;--calc-bg:#EEF4F8;--calc-panel:#FFFFFF;--calc-line:#D3DFE8}
+html,body,.slide.calc{background:var(--bg)}
+body{color:var(--text)}
+.bar{background:rgba(255,255,255,.92)}
+.bar-nav svg{stroke:var(--heading)}
+.bar-nav button:hover{background:var(--panel2)}
+.dots button{background:var(--line)}.dots button.is-active{background:var(--cyan)}
+.bar-brand,.goal b,.tiles-lead b,.cost-line b,.deck-h,.pillar h1,.calc-h,.pkg-name,.row label,.row output,.stat-v,.tile-t,.path-t,.pk-price,.rr-k,.rr-v,.rc-chip b,.rc-incl b,.rc-v,.rc-pill b,.you-do,.rc-label{color:var(--heading)}
+.outcome,.quote-q,.ct blockquote,.slide[aria-label="Testimonials"] .ct blockquote,.tiles-lead,.bd-row,.list,.pk-line,.pk-meta,.rc-chip,.rr-note,.promise,.rc-incl{color:var(--text)}
+.rc-card-pk.is-on .pk-meta{color:var(--heading)}
+.pk-name,.rr-s,.pk-small,.pk-line i,.rc-note,.rc-k,.rc-pill span,.rc-pill em,.tile-s,.media-cap,.ct figcaption,.calc-sub,.tp-text,#counter,.rc-k small,.pkg-tier,.pkg-meta,.pkg-note,.ticks,.stat-l,.stat-s,.be-l,.media.ph::before{color:var(--muted)}
+.rc-card-pk.is-on .pk-name,.rc-pill.is-on b,.pkg.is-selected .pkg-tier,.quote-t,.calc-brand,.pkg-price,.card-h{color:var(--cyan)}
+.outcome b,.note,.note b,.bd-row .pos,.bd-row.total,.sec-h,.extra-h,.site-foot,.col-h.yes,.stat.green .stat-v,.cost-line .g,.rc-row output,.you-do-k{color:var(--money-dark)}
+.note.neutral{color:var(--text)}
+.col-h.yes{border-color:var(--money-dark)}
+.stat.red .stat-v,.bd-row .neg,.rr-minus .rr-v{color:#dc2626}
+.rr-keep .rr-k,.rr-keep .rr-v,.rc-hero .rc-k,.rc-hero .rc-v{color:#fff}
+.list .box{border-color:var(--muted)}
+.pillar-check,.path-n,.list .dot{background:var(--green)}
+.pillar-check svg,.list .dot svg{stroke:#fff}
+.path-n{color:#fff}
+.promise,.outcome{border-left-color:var(--green)}
+.tile,.path-step,.ct,.quote,.rc-top,.rc-in,.rc-receipt,.media,.rc-card,.outcome{background:var(--panel);border-color:var(--line);box-shadow:0 2px 10px rgba(11,37,56,.06)}
+.rc-card.rc-hero,.rr-keep{background:linear-gradient(135deg,var(--money),var(--money-dark));border-color:var(--money)}
+.tile:hover,.pkg:hover,.rc-card-pk:hover,.rc-pill:hover{border-color:var(--cyan)}
+.rc-switch{background:var(--panel2);border-color:var(--line)}
+.rc-switch button{color:var(--muted)}.rc-switch button.is-on{background:var(--cyan);color:#fff}
+.rc-card-pk,.rc-pill,.pkg{background:var(--panel2);border-color:var(--line);box-shadow:none}
+.rc-card-pk.is-on,.rc-pill.is-on,.pkg.is-selected{background:var(--cyan-dim);border-color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.rc-chip,.rc-incl,.toggle,.cost-line,.note{background:var(--panel2);border-color:var(--line)}
+.rc-step{background:var(--cyan);color:#fff}
+.rc-ic{background:var(--cyan-dim)}.rc-ic svg{stroke:var(--cyan)}
+.rc-ic-red{background:rgba(220,38,38,.12)}.rc-ic-red svg{stroke:#dc2626}
+.range{background:var(--line)}
+.range::-webkit-slider-thumb{background:var(--cyan);border:3px solid var(--panel);box-shadow:0 0 0 2px var(--cyan)}
+.range::-moz-range-thumb{background:var(--cyan);border:3px solid var(--panel)}
+.switch{background:var(--line)}.switch.on{background:var(--cyan)}
+.be-bar{background:var(--line)}
+.rr-row{border-bottom-color:var(--line)}
+.tp-sep{background:var(--line)}.tp-star.half{background:linear-gradient(90deg,var(--cyan) 60%,var(--line) 60%)}
+.proof img{background:#fff}
+.you-do{background:var(--cyan-dim)}
+.card.hl{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan-dim),0 12px 40px rgba(11,37,56,.08)}
+.media-fit{background:var(--panel2)}

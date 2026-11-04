@@ -30,12 +30,12 @@ img { border-style: none; vertical-align: middle; }
 #col-0w8zXt67vP > .inner { flex-direction: column; justify-content: center; align-items: inherit; flex-wrap: nowrap; }
 
 /* social proof: video testimonials (one column) + dealer chats */
-.proof-sec{padding:40px 0;border-top:1px solid #1a1a1a}
+.proof-sec{padding:40px 0;border-top:1px solid var(--border)}
 .ct-col{display:flex;flex-direction:column;gap:20px}
-.ct{margin:0;background:#111;border:1px solid #1c1c1c;border-radius:12px;overflow:hidden}
+.ct{margin:0;background:var(--card);border:1px solid var(--border);box-shadow:0 2px 10px rgba(11,37,56,.05);border-radius:12px;overflow:hidden}
 .ct-v{background:#000}
-.ct blockquote{margin:0;padding:18px 22px 6px;font-style:italic;color:#e2e8f0;line-height:1.6;font-size:18px}
-.ct figcaption{padding:0 22px 18px;color:#8fa0ae;font-size:14px;font-weight:600}
+.ct blockquote{margin:0;padding:18px 22px 6px;font-style:italic;color:var(--text);line-height:1.6;font-size:18px}
+.ct figcaption{padding:0 22px 18px;color:var(--muted);font-size:14px;font-weight:600}
 @media(max-width:600px){.ct blockquote{font-size:16px;padding:14px 16px 4px}.ct figcaption{padding:0 16px 14px}}
 .chat-col{display:flex;flex-direction:column;gap:20px;margin-top:28px}
 </style>
@@ -48,9 +48,9 @@ img { border-style: none; vertical-align: middle; }
 <div id="custom-code-6gI5Q-CO_L" class="c-custom-code c-wrapper custom-code-6gI5Q-CO_L"><div id="custom-code-6gI5Q-CO_L__custom-code" class="custom-code-container ccustom-code-6gI5Q-CO_L">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{background-color:#000!important;background:#000!important;color:#fff;font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+html,body{background-color:var(--bg)!important;background:var(--bg)!important;color:var(--text);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
 
-:root{--primary:#34A5CB;--dark:#1A617A;--light:#5DB7D8;--bg:#000000}
+:root{--primary:#0E7FA6;--dark:#0A6484;--light:#0E7FA6;--bg:#EEF4F8;--bg2:#FFFFFF;--card:#FFFFFF;--border:#D3DFE8;--heading:#0B2538;--text:#28394A;--muted:#5B6E7E;--faint:#8797A5;--accent-soft:#DCEBF3;--step:#0B2538}
 
 .container{max-width:900px;margin:0 auto;padding:0 32px}
 @media(max-width:600px){.container{padding:0 20px}}
@@ -58,20 +58,20 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 /* Success header */
 .success-header{text-align:center;padding:60px 0 40px}
 .checkmark{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;background:var(--primary);margin-bottom:24px;font-size:40px}
-.success-title{font-family:'Montserrat',sans-serif;font-size:42px;font-weight:800;line-height:1.2;margin-bottom:16px;color:#fff}
+.success-title{font-family:'Montserrat',sans-serif;font-size:42px;font-weight:800;line-height:1.2;margin-bottom:16px;color:var(--heading)}
 @media(max-width:768px){.success-title{font-size:28px}}
-.success-sub{font-size:18px;color:#999;line-height:1.6}
+.success-sub{font-size:18px;color:var(--text);line-height:1.6}
 
 /* Step sections */
-.step-section{padding:40px 0;border-top:1px solid #1a1a1a}
-.step-badge{display:inline-block;background:var(--dark);color:#fff;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;padding:6px 16px;border-radius:20px;margin-bottom:16px;letter-spacing:1px;text-transform:uppercase}
-.step-heading{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;line-height:1.3;margin-bottom:16px;color:#fff}
+.step-section{padding:40px 0;border-top:1px solid var(--border)}
+.step-badge{display:inline-block;background:var(--step);color:#fff;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;padding:6px 16px;border-radius:20px;margin-bottom:16px;letter-spacing:1px;text-transform:uppercase}
+.step-heading{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;line-height:1.3;margin-bottom:16px;color:var(--heading)}
 @media(max-width:768px){.step-heading{font-size:22px}}
 
 /* Video */
-.video-wrap{position:relative;width:100%;padding-top:56.25%;background:#111;border-radius:12px;border:1px solid rgba(52,165,203,0.2);overflow:hidden;margin-bottom:24px}
+.video-wrap{position:relative;width:100%;padding-top:56.25%;background:#000;border-radius:12px;border:1px solid var(--border);box-shadow:0 12px 40px rgba(11,37,56,.12);overflow:hidden;margin-bottom:24px}
 .video-wrap iframe,.video-wrap .placeholder{position:absolute;top:0;left:0;width:100%;height:100%}
-.placeholder{display:flex;align-items:center;justify-content:center;color:#555;font-size:16px}
+.placeholder{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:16px}
 
 /* Videos grid */
 .videos-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:20px}
@@ -79,30 +79,30 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 .video-slot wistia-player{width:100%;border-radius:12px;overflow:hidden}
 
 /* Warning box */
-.warning-box{background:rgba(26,97,122,0.1);border:1px solid var(--dark);border-radius:12px;padding:24px;margin:20px 0}
-.warning-text{font-size:15px;color:#bbb;line-height:1.7}
-.warning-text strong{color:var(--light)}
+.warning-box{background:var(--accent-soft);border:1px solid var(--primary);border-radius:12px;padding:24px;margin:20px 0}
+.warning-text{font-size:15px;color:var(--text);line-height:1.7}
+.warning-text strong{color:var(--heading)}
 
 /* Calendar button */
 .calendar-btn{display:inline-block;background:var(--primary);color:#fff;padding:18px 48px;border-radius:10px;text-decoration:none;font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;transition:all .15s;border:none;cursor:pointer;text-align:center}
-.calendar-btn:hover{background:var(--dark);transform:translateY(-2px);box-shadow:0 8px 30px rgba(52,165,203,0.3)}
+.calendar-btn:hover{background:var(--dark);transform:translateY(-2px);box-shadow:0 8px 30px rgba(14,127,166,0.3)}
 .calendar-center{text-align:center;margin:24px 0}
 
-.alt-text{text-align:center;font-size:14px;color:#ffffff;margin-top:12px;line-height:1.6}
+.alt-text{text-align:center;font-size:14px;color:var(--muted);margin-top:12px;line-height:1.6}
 
 /* Success stories */
-.stories-section{padding:40px 0;border-top:1px solid #1a1a1a}
-.stories-heading{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;line-height:1.3;margin-bottom:32px;text-align:center}
+.stories-section{padding:40px 0;border-top:1px solid var(--border)}
+.stories-heading{color:var(--heading);font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;line-height:1.3;margin-bottom:32px;text-align:center}
 .stories-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
 @media(max-width:768px){.stories-grid{grid-template-columns:1fr}}
-.story-card{background:#111;border:1px solid #1c1c1c;border-radius:12px;padding:24px;transition:border-color .3s}
-.story-card:hover{border-color:var(--dark)}
+.story-card{background:var(--card);border:1px solid var(--border);box-shadow:0 2px 10px rgba(11,37,56,.05);border-radius:12px;padding:24px;transition:border-color .3s}
+.story-card:hover{border-color:var(--primary)}
 .story-name{font-family:'Montserrat',sans-serif;font-size:15px;font-weight:700;color:var(--light);margin-bottom:8px}
-.story-quote{font-size:13px;color:#bbb;line-height:1.7;font-style:italic}
+.story-quote{font-size:13px;color:var(--text);line-height:1.7;font-style:italic}
 
 /* Disclaimer */
-.disclaimer{padding:40px 0;border-top:1px solid #1a1a1a}
-.disclaimer-text{font-size:12px;color:#444;line-height:1.8;text-align:center}
+.disclaimer{padding:40px 0;border-top:1px solid var(--border)}
+.disclaimer-text{font-size:12px;color:var(--faint);line-height:1.8;text-align:center}
 </style>
 <!-- Success Header -->
 <section class="success-header">
@@ -118,7 +118,7 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 <div class="container">
  <span class="step-badge">Step 1</span>
  <h2 class="step-heading">Watch This First</h2>
- <div style="position:relative;width:calc(100% + 64px);margin-left:-32px;border-radius:12px;border:1px solid rgba(52,165,203,0.2);overflow:hidden;margin-bottom:24px">
+ <div style="position:relative;width:calc(100% + 64px);margin-left:-32px;border-radius:12px;border:1px solid rgba(14,127,166,0.2);overflow:hidden;margin-bottom:24px">
  <script src="https://fast.wistia.com/player.js" async></script>
  <div id="vidalytics_embed_1y6WI1o0O0HGBfop" style="width: 100%; position:relative; padding-top: 56.25%;"></div>
  <script type="text/javascript">
@@ -148,7 +148,7 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
  <div class="calendar-center">
  <a id="cal-btn" href="#" class="calendar-btn" target="_blank" rel="noopener">📅 Add To Google Calendar</a>
  </div>
- <p class="alt-text" style="margin-top:8px"><a id="ics-btn" href="#" style="color:#5DB7D8;text-decoration:underline">Apple Calendar / Outlook (.ics)</a></p>
+ <p class="alt-text" style="margin-top:8px"><a id="ics-btn" href="#" style="color:var(--primary);text-decoration:underline">Apple Calendar / Outlook (.ics)</a></p>
  <p class="alt-text">OR check your email and click <strong>"I know the sender"</strong> in your event email we just sent you!</p>
  </div>
  <script>
@@ -176,7 +176,7 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
  })();
  </script>
  <div style="text-align:center;margin-top:24px">
- <img src="../assets/calendar-confirmation.png" alt="Calendar Confirmation" style="max-width:100%;border-radius:8px;border:1px solid #1c1c1c">
+ <img src="../assets/calendar-confirmation.png" alt="Calendar Confirmation" style="max-width:100%;border-radius:8px;border:1px solid var(--border)">
  </div>
 </div>
 </section>
@@ -216,9 +216,9 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
     <figure class="ct"><div class="ct-v"><wistia-player media-id="v60bwgak1e" aspect="1.7777777777777777"></wistia-player></div><blockquote>&ldquo;Thank you so much for all the support and guidance you&#x27;re giving us on launching our website. We could not have done it without you.&rdquo;</blockquote><figcaption>&mdash; Sarah</figcaption></figure>
   </div>
   <div class="chat-col">
-    <img src="../assets/proof-text-01.jpg" alt="Dealer closes a lead from the team — $6,540" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid #1c1c1c;border-radius:12px" />
-    <img src="../assets/proof-text-02.jpg" alt="Dealer closes job #2 from the leads in one day — $8,000" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid #1c1c1c;border-radius:12px" />
-    <img src="../assets/proof-text-03.jpg" alt="Dealer closes a $6,250 job, about $4,000 net" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid #1c1c1c;border-radius:12px" />
+    <img src="../assets/proof-text-01.jpg" alt="Dealer closes a lead from the team — $6,540" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:12px" />
+    <img src="../assets/proof-text-02.jpg" alt="Dealer closes job #2 from the leads in one day — $8,000" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:12px" />
+    <img src="../assets/proof-text-03.jpg" alt="Dealer closes a $6,250 job, about $4,000 net" loading="lazy" style="width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:12px" />
   </div>
 </div>
 </section>
@@ -235,16 +235,16 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
 </div>
 <!-- ===== Pre-call resources: the funnel BODY code appends this to <body> on /thankyou-page and /thankyou ===== -->
 <div>
-<div id="precall-resources" style="background:#000;color:#fff;font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:0 auto;padding:40px 20px;">
+<div id="precall-resources" style="background:var(--bg2);color:var(--text);border-top:1px solid var(--border);font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:0 auto;padding:40px 20px;">
 
-  <h2 style="text-align:center;font-size:32px;margin:0 0 8px;color:#fff;">Your Pre-Call Resources</h2>
-  <p style="text-align:center;color:#bbb;font-size:17px;margin:0 0 36px;">
+  <h2 style="text-align:center;font-size:32px;margin:0 0 8px;color:var(--heading);">Your Pre-Call Resources</h2>
+  <p style="text-align:center;color:var(--text);font-size:17px;margin:0 0 36px;">
     Go through everything below before your call &mdash; it&rsquo;s mandatory prep.
-    When you&rsquo;re done, reply <span style="color:#188bf6;font-weight:bold;">DONE</span> to the text we sent you.
+    When you&rsquo;re done, reply <span style="color:var(--primary);font-weight:bold;">DONE</span> to the text we sent you.
   </p>
 
   <!-- 1. Equipment video (Wistia) -->
-  <h3 style="font-size:20px;margin:0 0 12px;color:#fff;"><span style="color:#188bf6;">1.</span> Watch this first &mdash; a message from our founder</h3>
+  <h3 style="font-size:20px;margin:0 0 12px;color:var(--heading);"><span style="color:var(--primary);">1.</span> Watch this first &mdash; a message from our founder</h3>
   <script src="https://fast.wistia.com/embed/ihu2jonr6k.js" async type="module"></script>
   <style>wistia-player[media-id='ihu2jonr6k']:not(:defined){background:center / contain no-repeat url('https://fast.wistia.com/embed/medias/ihu2jonr6k/swatch');display:block;filter:blur(5px);padding-top:56.25%;}</style>
   <div style="margin-bottom:36px;border-radius:8px;overflow:hidden;background:#111;">
@@ -252,16 +252,16 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
   </div>
 
   <!-- 2 & 3. Product demos (Drive previews) -->
-  <h3 style="font-size:20px;margin:0 0 12px;color:#fff;"><span style="color:#188bf6;">2.</span> See the product in action</h3>
+  <h3 style="font-size:20px;margin:0 0 12px;color:var(--heading);"><span style="color:var(--primary);">2.</span> See the product in action</h3>
   <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:36px;">
     <div style="flex:1 1 320px;">
-      <p style="color:#bbb;font-size:15px;margin:0 0 8px;">Mixing products for application</p>
+      <p style="color:var(--text);font-size:15px;margin:0 0 8px;">Mixing products for application</p>
       <div style="position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#111;">
         <iframe src="https://drive.google.com/file/d/1JvnIQzn7JkYbQWSwVHrMXQ-o7zGY5KJB/preview" title="Mixing demo" allow="autoplay; fullscreen" allowfullscreen frameborder="0" style="position:absolute;top:0;left:0;width:100%;height:100%;"></iframe>
       </div>
     </div>
     <div style="flex:1 1 320px;">
-      <p style="color:#bbb;font-size:15px;margin:0 0 8px;">Spraying the roof</p>
+      <p style="color:var(--text);font-size:15px;margin:0 0 8px;">Spraying the roof</p>
       <div style="position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#111;">
         <iframe src="https://drive.google.com/file/d/1mTxchrtaL_mQUxrbfjBDAxLgmkWfdaeo/preview" title="Spraying demo" allow="autoplay; fullscreen" allowfullscreen frameborder="0" style="position:absolute;top:0;left:0;width:100%;height:100%;"></iframe>
       </div>
@@ -269,12 +269,12 @@ html,body{background-color:#000!important;background:#000!important;color:#fff;f
   </div>
 
   <!-- 4. Warranty deck (Slides embed) -->
-  <h3 style="font-size:20px;margin:0 0 12px;color:#fff;"><span style="color:#188bf6;">3.</span> Our warranty</h3>
+  <h3 style="font-size:20px;margin:0 0 12px;color:var(--heading);"><span style="color:var(--primary);">3.</span> Our warranty</h3>
   <div style="position:relative;padding-top:60%;margin-bottom:28px;border-radius:8px;overflow:hidden;background:#111;">
     <iframe src="https://docs.google.com/presentation/d/16S7scfzRkBnbpKVliZLBCqNJoFcamtZ-x1Ofn74A6Zo/embed?start=false&amp;loop=false" title="Warranty deck" allowfullscreen frameborder="0" style="position:absolute;top:0;left:0;width:100%;height:100%;"></iframe>
   </div>
 
-  <p style="text-align:center;color:#999;font-size:14px;margin:0;">
+  <p style="text-align:center;color:var(--muted);font-size:14px;margin:0;">
     Questions before your call? Just reply to the text or email from your rep.
   </p>
 </div>
