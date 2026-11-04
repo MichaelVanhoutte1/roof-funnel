@@ -1,7 +1,7 @@
 /**
  * Lead gating for POST /lead and POST /lead/partial.
  * Ported from the Stone Systems funnel (optin-validation + fake-lead-heuristics) with the
- * OnYa Roof survey questions. Three outcomes: reject (400 + message), ghost (200 silent,
+ * Start Roof Rejuvenating survey questions. Three outcomes: reject (400 + message), ghost (200 silent,
  * nothing reaches the CRM), process.
  */
 import parsePhoneNumberFromString, { type CountryCode, type PhoneNumber } from "libphonenumber-js";

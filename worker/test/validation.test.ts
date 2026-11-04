@@ -52,8 +52,8 @@ test("obvious test identities ghost", () => {
 });
 
 test("owner test address and configured internal domains ghost", () => {
-  assert.equal(isFakeLeadIdentity({ name: "Sam Owner", email: "sam@onyaroof.com", digits10: "8134627731" }, { internalEmailDomains: "onyaroof.com" }), true);
-  assert.equal(isFakeLeadIdentity({ name: "Sam Owner", email: "sam@onyaroof.com", digits10: "8134627731" }, {}), false);
+  assert.equal(isFakeLeadIdentity({ name: "Sam Owner", email: "sam@startroofrejuvenating.com", digits10: "8134627731" }, { internalEmailDomains: "startroofrejuvenating.com" }), true);
+  assert.equal(isFakeLeadIdentity({ name: "Sam Owner", email: "sam@startroofrejuvenating.com", digits10: "8134627731" }, {}), false);
 });
 
 test("real names with consonant clusters pass", () => {

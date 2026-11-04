@@ -1,4 +1,4 @@
-/* Dealer application survey — ported from the Stone Systems opt-in survey, OnYa Roof colours. */
+/* Dealer application survey — ported from the Stone Systems opt-in survey, Start Roof Rejuvenating colours. */
 .sv{--sv-primary:#34A5CB;--sv-dark:#1A617A;--sv-light:#5DB7D8;--sv-bg:#fff;--sv-panel:#fff;--sv-border:#e2e8f0;--sv-text:#0f172a;--sv-muted:#64748b;--sv-error:#dc2626;
   position:relative;display:flex;flex-direction:column;min-height:600px;padding:28px 24px 24px;color:var(--sv-text);background:var(--sv-bg);font-family:'Poppins',sans-serif;text-align:left}
 @media(max-width:600px){.sv{padding:22px 16px 18px;min-height:560px}}

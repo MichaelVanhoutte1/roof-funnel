@@ -1,7 +1,7 @@
 # roof-funnel
 
-Static, dependency-free copy of the OnYa Roof dealer funnel (originally a GoHighLevel funnel at
-onyaroof.com), served from GitHub Pages at **https://startroofrejuvenating.com**.
+Static, dependency-free Start Roof Rejuvenating dealer funnel (originally a GoHighLevel funnel),
+served from GitHub Pages at **https://startroofrejuvenating.com**.
 
 Every page is the funnel's own custom-code block, captured verbatim from the live GHL page payload on
 2026-10-14, wrapped in the same section / row / column shell and the same page-level CSS the page
@@ -9,8 +9,7 @@ builder applied, so the rendered result is the same pixel for pixel.
 
 | Path | Source GHL page | Notes |
 | --- | --- | --- |
-| `/` | OnyaRoof Funnel (`/`) | Opt-in: Vidalytics VSL + ROASForm application |
-| `/onyaroof-funnel-page/` | same page, GHL's internal path | identical copy of `/` |
+| `/` | Funnel (`/`) | Opt-in: Vidalytics VSL + dealer application survey |
 | `/thankyou-page/` | Thankyou Page | post-booking page, 15 proof screenshots |
 | `/thankyou/` | Thankyou (clone, 2026-10-11) | same page without the first two proof screenshots |
 | `/privacy-policy/` | Privacy Policy | |
@@ -33,7 +32,7 @@ Routing after submit (decided server-side):
 | anything else | GHL booking calendar inline (prefilled), or the thanks panel while `data-calendar` is empty |
 | honeypot, non US/CA IP, fake/test identity | thanks panel; nothing stored, nothing sent |
 
-Configure on the `#dealer-survey` element in `index.html` (and the `onyaroof-funnel-page/` copy):
+Configure on the `#dealer-survey` element in `index.html`:
 `data-api` = Worker base URL, `data-calendar` = GHL booking-widget URL
 (`https://api.leadconnectorhq.com/widget/booking/<calendarId>`). Set the calendar's post-booking
 redirect to `https://startroofrejuvenating.com/thankyou-page/` so the Add To Calendar button works.
@@ -81,10 +80,8 @@ on GHL could only run through `<img onerror>` hacks; here its two effects are pl
 the footer **Contact** link on the opt-in page and the **Your Pre-Call Resources** section at the
 bottom of both thank-you pages.
 
-Things that still point at the old domain / accounts, by design (1:1 copy):
+Leftovers from the original page, by design (1:1 copy):
 
-- Footer links: `https://onyaroof.com/privacy-policy` and the viktor.page Contact page.
-- Callix attribution script loads from `m.onyaroof.com`.
 - The "Add To My Calendar" button reads `date` / `event_start_time` / `event_end_time` query
   params, while ROASForm sends `roasform_start` / `roasform_end`, so the button stays a `#` link.
   Same behaviour as the live page.
