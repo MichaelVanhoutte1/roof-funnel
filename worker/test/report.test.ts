@@ -48,6 +48,15 @@ test("closer attendance from Fathom / Meet beats the pipeline stage; the stage i
 });
 function pick(o: ReturnType<typeof leadOutcome>) { return { toCloser: o.toCloser, closerShowed: o.closerShowed, closerNoShow: o.closerNoShow }; }
 
+test("closer booked = a closer appointment or a stage from Closer Booked onwards; Setter Qualified alone is not booked", () => {
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Setter Qualified" }), NOW).closerBooked, false);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Setter Qualified" }), NOW).toCloser, true);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Setter Qualified", closer_appointment_id: "c1" }), NOW).closerBooked, true);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Closer Booked" }), NOW).closerBooked, true);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Closer Booked Noshow" }), NOW).closerBooked, true);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Won" }), NOW).closerBooked, true);
+});
+
 test("won counts cash from the opportunity, by stage or by opportunity status", () => {
   const a = leadOutcome(lead({ pipeline_stage: "Won", opportunity_value: 20500 }), NOW);
   assert.deepEqual([a.won, a.cash, a.closerShowed, a.toCloser], [true, 20500, true, true]);
@@ -86,11 +95,12 @@ test("buildReport totals, rates and per-answer rows", () => {
   const r = buildReport(leads, NOW);
   const t = r.totals;
   assert.deepEqual(
-    [t.leads, t.qualified, t.booked, t.showed, t.noShow, t.setterDq, t.toCloser, t.closerShowed, t.closerNoShow, t.won, t.cash],
-    [7, 5, 4, 3, 1, 1, 2, 1, 1, 1, 20000],
+    [t.leads, t.qualified, t.booked, t.showed, t.noShow, t.setterDq, t.toCloser, t.closerBooked, t.closerShowed, t.closerNoShow, t.won, t.cash],
+    [7, 5, 4, 3, 1, 1, 2, 2, 1, 1, 1, 20000],
   );
   assert.equal(t.bookRate, 4 / 7);
   assert.equal(t.showRate, 3 / 4);
+  assert.equal(t.closerBookRate, 2 / 3);
   assert.equal(t.closerShowRate, 1 / 2);
   assert.equal(t.closeRate, 1);
   assert.equal(t.cashPerBooked, 5000);

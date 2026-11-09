@@ -42,9 +42,9 @@ export type ReportLead = {
   credit_offer_amount_2: string | null;
 };
 
-type StageFacts = { talked: boolean; setterNoShow: boolean; setterDq: boolean; toCloser: boolean; closerShowed: boolean; closerNoShow: boolean; won: boolean };
+type StageFacts = { talked: boolean; setterNoShow: boolean; setterDq: boolean; toCloser: boolean; closerBooked: boolean; closerShowed: boolean; closerNoShow: boolean; won: boolean };
 
-const NO: StageFacts = { talked: false, setterNoShow: false, setterDq: false, toCloser: false, closerShowed: false, closerNoShow: false, won: false };
+const NO: StageFacts = { talked: false, setterNoShow: false, setterDq: false, toCloser: false, closerBooked: false, closerShowed: false, closerNoShow: false, won: false };
 
 /** Pipeline stage name (as written in GHL, case-insensitive) → what it says about the lead. */
 const STAGE_FACTS: Record<string, StageFacts> = {
@@ -53,10 +53,10 @@ const STAGE_FACTS: Record<string, StageFacts> = {
   "setter noshow": { ...NO, setterNoShow: true },
   "setter disqualified": { ...NO, talked: true, setterDq: true },
   "setter qualified": { ...NO, talked: true, toCloser: true },
-  "closer booked": { ...NO, talked: true, toCloser: true },
-  "closer followup": { ...NO, talked: true, toCloser: true, closerShowed: true },
-  "closer booked noshow": { ...NO, talked: true, toCloser: true, closerNoShow: true },
-  won: { ...NO, talked: true, toCloser: true, closerShowed: true, won: true },
+  "closer booked": { ...NO, talked: true, toCloser: true, closerBooked: true },
+  "closer followup": { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true },
+  "closer booked noshow": { ...NO, talked: true, toCloser: true, closerBooked: true, closerNoShow: true },
+  won: { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true, won: true },
 };
 
 export function knownStage(stage: string | null | undefined): boolean {
@@ -68,7 +68,10 @@ export type Outcome = {
   setterShowed: boolean;
   setterNoShow: boolean;
   setterDq: boolean;
+  /** Passed the setter (Setter Qualified or further), whether or not a closer call is on the calendar yet. */
   toCloser: boolean;
+  /** A closer call is booked: a closer calendar appointment, or a stage from Closer Booked onwards. */
+  closerBooked: boolean;
   closerShowed: boolean;
   closerNoShow: boolean;
   won: boolean;
@@ -87,6 +90,7 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   // A past booked call with no conversation is a no-show once the setter marked it or tried calling.
   const setterNoShow = booked && past && !talked && (stage.setterNoShow || (l.setter_calls ?? 0) > 0);
   const toCloser = stage.toCloser || won || !!l.closer_appointment_id;
+  const closerBooked = stage.closerBooked || won || !!l.closer_appointment_id;
   const closerKnown = l.closer_attended === "showed" || l.closer_attended === "no_show";
   const closerShowed = won || (closerKnown ? l.closer_attended === "showed" : stage.closerShowed);
   const closerNoShow = !closerShowed && (closerKnown ? l.closer_attended === "no_show" : stage.closerNoShow);
@@ -96,6 +100,7 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
     setterNoShow,
     setterDq: stage.setterDq,
     toCloser,
+    closerBooked,
     closerShowed,
     closerNoShow,
     won,
@@ -118,6 +123,9 @@ export type SegmentRow = {
   showRate: number | null;
   setterDq: number;
   toCloser: number;
+  closerBooked: number;
+  /** closerBooked ÷ showed (setter showed) */
+  closerBookRate: number | null;
   closerShowed: number;
   closerNoShow: number;
   /** closerShowed ÷ (closerShowed + closerNoShow) */
@@ -130,10 +138,10 @@ export type SegmentRow = {
   cashPerBooked: number | null;
 };
 
-type Counts = Omit<SegmentRow, "bookRate" | "showRate" | "closerShowRate" | "closeRate" | "cashPerBooked">;
+type Counts = Omit<SegmentRow, "bookRate" | "showRate" | "closerBookRate" | "closerShowRate" | "closeRate" | "cashPerBooked">;
 
 function emptyCounts(label: string): Counts {
-  return { label, leads: 0, qualified: 0, booked: 0, showed: 0, noShow: 0, setterDq: 0, toCloser: 0, closerShowed: 0, closerNoShow: 0, won: 0, cash: 0 };
+  return { label, leads: 0, qualified: 0, booked: 0, showed: 0, noShow: 0, setterDq: 0, toCloser: 0, closerBooked: 0, closerShowed: 0, closerNoShow: 0, won: 0, cash: 0 };
 }
 
 function rate(n: number, d: number): number | null {
@@ -145,6 +153,7 @@ function finish(c: Counts): SegmentRow {
     ...c,
     bookRate: rate(c.booked, c.leads),
     showRate: rate(c.showed, c.showed + c.noShow),
+    closerBookRate: rate(c.closerBooked, c.showed),
     closerShowRate: rate(c.closerShowed, c.closerShowed + c.closerNoShow),
     closeRate: rate(c.won, c.closerShowed),
     cashPerBooked: c.booked > 0 ? c.cash / c.booked : null,
@@ -159,6 +168,7 @@ function add(c: Counts, l: ReportLead, o: Outcome): void {
   if (o.setterNoShow) c.noShow++;
   if (o.setterDq) c.setterDq++;
   if (o.toCloser) c.toCloser++;
+  if (o.closerBooked) c.closerBooked++;
   if (o.closerShowed) c.closerShowed++;
   if (o.closerNoShow) c.closerNoShow++;
   if (o.won) c.won++;

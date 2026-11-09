@@ -118,32 +118,48 @@
   /* ---------------- overview (same layout as the CSP Lead Scoring page) ---------------- */
   var SECTIONS = { capital: "Capital", timeline: "Urgency", business_owner: "Avatar", credit_score: "Credit", credit_offer: "Financing", result: "Funnel" };
 
-  function closeRate(r) { return r.showed > 0 ? r.won / r.showed : null; }
+  /* Score weights the setter show, closer show, close and book rates (close % = won ÷ closer showed, from the server). */
   function scoreBadge(r) {
-    var composite = (r.showRate || 0) * 0.5 + (closeRate(r) || 0) * 0.3 + (r.bookRate || 0) * 0.2;
+    var composite = (r.showRate || 0) * 0.3 + (r.closerShowRate || 0) * 0.2 + (r.closeRate || 0) * 0.3 + (r.bookRate || 0) * 0.2;
     return composite >= 0.45 ? pill("Best", "good") : composite >= 0.25 ? pill("Avg", "warn") : pill("Weak");
   }
+  /* [group, label, value, class]. Setter columns are the funnel's own booking; closer columns are the call the setter books afterwards. */
   var COLUMNS = [
-    ["Leads", function (r) { return num(r.leads); }],
-    ["Booked", function (r) { return num(r.booked); }],
-    ["Book %", function (r) { return pct(r.bookRate); }, "muted"],
-    ["Showed", function (r) { return num(r.showed); }],
-    ["Show %", function (r) { return pct(r.showRate); }],
-    ["Closed", function (r) { return num(r.won); }],
-    ["Close %", function (r) { return pct(closeRate(r)); }],
-    ["$ / booked", function (r) { return money(r.cashPerBooked); }],
+    ["", "Leads", function (r) { return num(r.leads); }],
+    ["Setter", "Booked", function (r) { return num(r.booked); }, "grp"],
+    ["Setter", "Book %", function (r) { return pct(r.bookRate); }, "muted"],
+    ["Setter", "Showed", function (r) { return num(r.showed); }],
+    ["Setter", "Show %", function (r) { return pct(r.showRate); }],
+    ["Closer", "Booked", function (r) { return num(r.closerBooked); }, "grp"],
+    ["Closer", "Book %", function (r) { return pct(r.closerBookRate); }, "muted"],
+    ["Closer", "Showed", function (r) { return num(r.closerShowed); }],
+    ["Closer", "Show %", function (r) { return pct(r.closerShowRate); }],
+    ["Sale", "Closed", function (r) { return num(r.won); }, "grp"],
+    ["Sale", "Close %", function (r) { return pct(r.closeRate); }],
+    ["Sale", "$ / booked", function (r) { return money(r.cashPerBooked); }],
   ];
 
+  function groupRow() {
+    var cells = [el("th", { class: "grp-head" })], i = 0;
+    while (i < COLUMNS.length) {
+      var g = COLUMNS[i][0], span = 0;
+      while (i < COLUMNS.length && COLUMNS[i][0] === g) { span++; i++; }
+      cells.push(el("th", { class: "grp-head" + (g ? " grp" : ""), colspan: String(span), text: g }));
+    }
+    cells.push(el("th", { class: "grp-head" }));
+    return el("tr", null, cells);
+  }
+
   function segmentSection(key, question, rows) {
-    var head = el("tr", null, [el("th", { text: "Segment" })].concat(COLUMNS.map(function (c) { return el("th", { text: c[0] }); })).concat([el("th", { text: "Score" })]));
+    var head = el("tr", null, [el("th", { text: "Segment" })].concat(COLUMNS.map(function (c) { return el("th", { class: c[3] === "grp" ? "grp" : null, text: c[1] }); })).concat([el("th", { text: "Score" })]));
     var body = rows.map(function (r) {
       return el("tr", null, [el("td", { class: "segment", text: r.label })]
-        .concat(COLUMNS.map(function (c) { return el("td", { class: c[2] || null, text: c[1](r) }); }))
+        .concat(COLUMNS.map(function (c) { return el("td", { class: c[3] || null, text: c[2](r) }); }))
         .concat([el("td", null, [scoreBadge(r)])]));
     });
     var details = el("details", { class: "acc" }, [
       el("summary", null, [el("div", null, [el("p", { class: "acc-tag", text: SECTIONS[key] }), el("p", { class: "acc-q", text: question })])]),
-      el("div", { class: "scroll" }, [el("table", { class: "seg" }, [el("thead", null, [head]), el("tbody", null, body)])]),
+      el("div", { class: "scroll" }, [el("table", { class: "seg" }, [el("thead", null, [groupRow(), head]), el("tbody", null, body)])]),
     ]);
     details.open = !!state.open[key];
     details.addEventListener("toggle", function () { state.open[key] = details.open; });
@@ -163,10 +179,12 @@
     var data = state.report; if (!data) return;
     var r = data.report, t = r.totals;
     box.appendChild(el("div", { class: "cards" }, [
-      stat("Total Leads", num(t.leads), num(t.booked) + " booked an appt"),
-      stat("Book Rate", pct(t.bookRate), "leads → booked"),
-      stat("Show Rate", pct(t.showRate), "booked → showed"),
-      stat("Close Rate", pct(closeRate(t)), "showed → closed"),
+      stat("Total Leads", num(t.leads), num(t.qualified) + " sent to the calendar"),
+      stat("Setter Booked", num(t.booked), pct(t.bookRate) + " of leads"),
+      stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show"),
+      stat("Closer Booked", num(t.closerBooked), pct(t.closerBookRate) + " of setter shows"),
+      stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show"),
+      stat("Close Rate", pct(t.closeRate), num(t.won) + " won of " + num(t.closerShowed) + " closer shows"),
       stat("$ / Booked Call", money(t.cashPerBooked), money(t.cash) + " cash"),
     ]));
     if (r.unknownStages && r.unknownStages.length) {
