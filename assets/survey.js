@@ -219,7 +219,7 @@
       refs.errors[s.key] = err;
       slide.appendChild(err);
       slide.appendChild(el("button", { type: "submit", class: "sv-cta", text: s.submit ? "Check My Eligibility" : "Continue" }));
-      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", text: "We'll only use this to confirm your strategy session." }));
+      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", html: 'By submitting, you agree to our <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a>, including a soft credit check to pre-qualify you. It won\'t affect your credit score.' }));
     }
     track.appendChild(slide);
   });
