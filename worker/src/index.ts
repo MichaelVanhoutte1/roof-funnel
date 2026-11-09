@@ -70,9 +70,7 @@ export interface Env {
   SIMPLECHECK_API_URL?: string;
   /** Closer-call attendance for the roof business (all optional; see outcomes.ts). */
   FATHOM_API_KEY?: string;
-  GOOGLE_MEET_CLIENT_ID?: string;
-  GOOGLE_MEET_CLIENT_SECRET?: string;
-  GOOGLE_MEET_REFRESH_TOKENS?: string;
+  GOOGLE_MEET_SERVICE_ACCOUNT?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";

@@ -79,3 +79,14 @@ test("meetAttendance: showed needs a second participant present for five minutes
     { earliestStartTime: "2026-11-01T15:00:00Z", latestEndTime: "2026-11-01T15:20:00Z", anonymousUser: { displayName: "Fathom Notetaker" } },
   ], now), { attended: "no_show", minutes: 0 });
 });
+
+test("meetAttendance: participants merged from several records of one call (host twice, prospect once) still read as showed", () => {
+  const T = (m: number) => new Date(Date.UTC(2026, 10, 5, 20, 56 + m)).toISOString();
+  const r = meetAttendance([
+    { signedinUser: { displayName: "Calvin" }, earliestStartTime: T(0), latestEndTime: T(3) },
+    { signedinUser: { displayName: "Calvin" }, earliestStartTime: T(12), latestEndTime: T(62) },
+    { anonymousUser: { displayName: "Prospect" }, earliestStartTime: T(14), latestEndTime: T(62) },
+    { anonymousUser: { displayName: "Prospect" }, earliestStartTime: T(13), latestEndTime: T(13) },
+  ], Date.UTC(2026, 10, 6));
+  assert.deepEqual(r, { attended: "showed", minutes: 48 });
+});

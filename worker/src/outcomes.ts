@@ -11,6 +11,7 @@
  * A run is budgeted to stay well under the Worker's subrequest limit; whatever is left waits for the next run.
  */
 import { ghl, type GhlConfig } from "./ghl.ts";
+import { MEET_SCOPE, parseServiceAccount, serviceAccountToken } from "./google.ts";
 
 const OPPORTUNITIES_API = { Version: "2021-07-28" };
 const SQL_NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -25,10 +26,8 @@ export type SyncEnv = {
   GHL_LOCATION_ID?: string;
   /** Fathom API key of the roof business account (secret). Unset = no Fathom attendance. */
   FATHOM_API_KEY?: string;
-  /** Google OAuth client + one refresh token per closer Google account (JSON array or comma-separated), scope meetings.space.readonly. */
-  GOOGLE_MEET_CLIENT_ID?: string;
-  GOOGLE_MEET_CLIENT_SECRET?: string;
-  GOOGLE_MEET_REFRESH_TOKENS?: string;
+  /** Google service-account key (JSON) with domain-wide delegation for meetings.space.readonly; acts as each call's host. */
+  GOOGLE_MEET_SERVICE_ACCOUNT?: string;
 };
 
 export type SyncSummary = {
@@ -173,7 +172,7 @@ export function meetCode(url: string | null | undefined): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
-type CalendarEvent = { id: string; contactId?: string; appointmentStatus?: string; startTime?: string; address?: string | null };
+type CalendarEvent = { id: string; contactId?: string; appointmentStatus?: string; startTime?: string; address?: string | null; assignedUserId?: string | null };
 
 function isoOrNull(v: string | undefined): string | null {
   const t = v ? Date.parse(v) : NaN;
@@ -203,20 +202,38 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
     const data = await ghl<{ events?: CalendarEvent[] }>(cfg, `/calendars/events?locationId=${cfg.locationId}&calendarId=${c.id}&startTime=${start}&endTime=${end}`);
     events.push(...(data.events ?? []));
   }
+  const picked = pickCloserEvents(events);
+  // The host's email is what the Meet API is read as (domain-wide delegation acts as the host). One users call per sync.
+  const hosts = await hostEmails(cfg, [...picked.values()].map((e) => e.assignedUserId ?? ""));
   // "Showed" sticks (a follow-up call does not undo the first one). Otherwise a different appointment, or the
   // same one moved to another time, starts with unknown attendance again. The newest lead row per contact only.
   const keep = "((closer_appointment_id IS ?1 AND closer_start IS ?2) OR closer_attended = 'showed')";
-  const statements = [...pickCloserEvents(events).entries()].map(([contactId, e]) =>
+  const statements = [...picked.entries()].map(([contactId, e]) =>
     db.prepare(
       `UPDATE leads SET closer_attended = CASE WHEN ${keep} THEN closer_attended ELSE NULL END,
          closer_attended_source = CASE WHEN ${keep} THEN closer_attended_source ELSE NULL END,
          closer_minutes = CASE WHEN ${keep} THEN closer_minutes ELSE NULL END,
          closer_checked_at = CASE WHEN ${keep} THEN closer_checked_at ELSE NULL END,
-         closer_appointment_id = ?1, closer_start = ?2, closer_status = ?3, closer_meet_code = ?4
+         closer_appointment_id = ?1, closer_start = ?2, closer_status = ?3, closer_meet_code = ?4, closer_host = ?6
        WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
-         AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4)`,
-    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId));
+         AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4 OR closer_host IS NOT ?6)`,
+    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId, hosts.get(e.assignedUserId ?? "") ?? null));
   return { events: events.length, updated: await runBatches(db, statements) };
+}
+
+type GhlUser = { id: string; email?: string | null };
+
+/** GHL user id → lower-cased email for the ids given; skipped (no request) when no event names a host. */
+async function hostEmails(cfg: GhlConfig, userIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!userIds.some(Boolean)) return out;
+  try {
+    const data = await ghl<{ users?: GhlUser[] }>(cfg, `/users/?locationId=${cfg.locationId}`);
+    for (const u of data.users ?? []) if (u.id && u.email) out.set(u.id, u.email.trim().toLowerCase());
+  } catch (err) {
+    console.error("[sync] GHL users lookup failed; closer hosts left as they were:", errorText(err));
+  }
+  return out;
 }
 
 /* ---------------- 3b. closer attendance (Google Meet, else Fathom) ---------------- */
@@ -281,77 +298,69 @@ export function meetAttendance(participants: MeetParticipant[], nowMs: number): 
   return { attended: second >= MEET_SHOW_MIN_MINUTES ? "showed" : "no_show", minutes: second };
 }
 
-function refreshTokens(raw: string | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) return parsed.filter((t): t is string => typeof t === "string" && !!t.trim());
-  } catch { /* comma-separated */ }
-  return raw.split(",").map((t) => t.trim()).filter(Boolean);
-}
-
 /**
- * Google Meet REST API v2 (conferenceRecords). NOT yet exercised against a real account: it was written from
- * Google's reference while the roof business's Google connection did not exist. Verify on the first run.
+ * Google Meet REST API v2 (conferenceRecords), read as the call's host through domain-wide delegation.
+ * Verified 2026-11-09 against the roof Workspace: records of a Meet code are visible to the host only, so a host
+ * outside the delegated domain (a @stonesystems.io account) yields "unauthorized_client" and that call stays stage-based.
+ * Participants of the one conference on that Meet link that started around the appointment, or null if this host has none.
  */
-async function googleAccessToken(env: SyncEnv, refreshToken: string): Promise<string> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: env.GOOGLE_MEET_CLIENT_ID ?? "", client_secret: env.GOOGLE_MEET_CLIENT_SECRET ?? "", refresh_token: refreshToken, grant_type: "refresh_token" }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`Google token → ${res.status}`);
-  const data = (await res.json()) as { access_token?: string };
-  if (!data.access_token) throw new Error("Google token response had no access_token");
-  return data.access_token;
-}
-
-/** Participants of the one conference on that Meet link that started around the appointment, or null if this account has none. */
 async function meetParticipants(accessToken: string, code: string, appointmentIso: string): Promise<MeetParticipant[] | null> {
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
   const filter = encodeURIComponent(`space.meeting_code = "${code}"`);
   const res = await fetch(`https://meet.googleapis.com/v2/conferenceRecords?filter=${filter}`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Meet conferenceRecords → ${res.status}`);
   const records = ((await res.json()) as { conferenceRecords?: Array<{ name: string; startTime?: string }> }).conferenceRecords ?? [];
-  const record = records.filter((r) => nearAppointment(r.startTime, appointmentIso)).sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""))[0];
-  if (!record) return null;
-  const p = await fetch(`https://meet.googleapis.com/v2/${record.name}/participants?pageSize=50`, { headers, signal: AbortSignal.timeout(10_000) });
-  if (!p.ok) throw new Error(`Meet participants → ${p.status}`);
-  return ((await p.json()) as { participants?: MeetParticipant[] }).participants ?? [];
+  // A call often has several records (the host opens the room, drops, reopens): merge the participants of every record
+  // around the appointment (seen live: a 3-minute false start before the real 56-minute call). At most 3 records.
+  const near = records.filter((r) => nearAppointment(r.startTime, appointmentIso)).sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "")).slice(0, 3);
+  if (!near.length) return null;
+  const all: MeetParticipant[] = [];
+  for (const record of near) {
+    const p = await fetch(`https://meet.googleapis.com/v2/${record.name}/participants?pageSize=50`, { headers, signal: AbortSignal.timeout(10_000) });
+    if (!p.ok) throw new Error(`Meet participants → ${p.status}`);
+    all.push(...(((await p.json()) as { participants?: MeetParticipant[] }).participants ?? []));
+  }
+  return all;
 }
 
-type CloserDue = { id: number; closer_meet_code: string; closer_start: string };
+type CloserDue = { id: number; closer_meet_code: string; closer_start: string; closer_host: string | null };
 
 export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: number): Promise<{ source: "google_meet" | "fathom" | "none"; checked: number; resolved: number }> {
-  const tokens = env.GOOGLE_MEET_CLIENT_ID && env.GOOGLE_MEET_CLIENT_SECRET ? refreshTokens(env.GOOGLE_MEET_REFRESH_TOKENS).slice(0, 2) : [];
-  const source = tokens.length ? "google_meet" : env.FATHOM_API_KEY ? "fathom" : "none";
+  const sa = parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
+  const source = sa ? "google_meet" : env.FATHOM_API_KEY ? "fathom" : "none";
   if (source === "none") return { source, checked: 0, resolved: 0 };
 
   // Closer calls that started at least 45 minutes ago, in the last 14 days, with attendance still unknown.
+  // With Meet, only calls whose host is known: the host is who the conference is read as.
   const { results: due } = await env.DB.prepare(
-    `SELECT id, closer_meet_code, closer_start FROM leads
+    `SELECT id, closer_meet_code, closer_start, closer_host FROM leads
      WHERE closer_meet_code IS NOT NULL AND closer_attended IS NULL AND IFNULL(closer_status, '') <> 'cancelled'
        AND closer_start < strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 minutes') AND closer_start > strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days')
        AND (closer_checked_at IS NULL OR closer_checked_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 hours'))
+       AND (?2 = 0 OR closer_host IS NOT NULL)
      ORDER BY closer_start DESC LIMIT ?1`,
-  ).bind(max).all<CloserDue>();
+  ).bind(max, sa ? 1 : 0).all<CloserDue>();
   if (!due.length) return { source, checked: 0, resolved: 0 };
 
   const found = new Map<number, Attendance>();
-  if (source === "google_meet") {
-    // One closer's revoked or expired connection must not stop the other closer's calls from being read.
-    const access: string[] = [];
-    for (const t of tokens) {
-      try { access.push(await googleAccessToken(env, t)); } catch (err) { console.error("[sync] a Google connection failed:", errorText(err)); }
+  if (sa) {
+    // One token per distinct host. A host the delegation cannot act as (outside the Workspace) is logged and skipped,
+    // but a conference is also listed for everyone who joined it, so the other hosts' tokens are tried next (seen live:
+    // a call hosted from a @stonesystems.io account was readable as the closer who sat in on it).
+    const tokens = new Map<string, string | null>();
+    for (const host of new Set(due.map((l) => l.closer_host!))) {
+      try { tokens.set(host, await serviceAccountToken(sa, host, MEET_SCOPE, fetch, nowMs)); } catch (err) { tokens.set(host, null); console.error("[sync] Google token failed:", errorText(err)); }
     }
     for (const lead of due) {
-      for (const token of access) {
+      const order = [lead.closer_host!, ...[...tokens.keys()].filter((h) => h !== lead.closer_host)];
+      for (const host of order) {
+        const token = tokens.get(host);
+        if (!token) continue;
         try {
           const participants = await meetParticipants(token, lead.closer_meet_code, lead.closer_start);
           if (participants) { found.set(lead.id, meetAttendance(participants, nowMs)); break; }
         } catch (err) {
-          console.error("[sync] Meet lookup failed for lead", lead.id, errorText(err));
+          console.error("[sync] Meet lookup failed for lead", lead.id, "as", host, errorText(err));
         }
       }
     }
@@ -380,9 +389,9 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
   if (cfg) {
     try { summary.pipeline = await syncPipeline(env.DB, cfg); } catch (err) { summary.pipeline = { error: errorText(err) }; }
     try { summary.closerAppointments = await syncCloserAppointments(env.DB, cfg, nowMs); } catch (err) { summary.closerAppointments = { error: errorText(err) }; }
-    // Budget per run (Workers free plan: 50 subrequests): pipeline <= 7, closer calendars <= 5, call logs 2 per lead,
-    // attendance <= 3 with Fathom, or <= 11 with Google Meet (2 token exchanges + at most 3 calls for each of 3 leads).
-    const callLogs = env.GOOGLE_MEET_REFRESH_TOKENS ? 8 : 12;
+    // Budget per run (Workers free plan: 50 subrequests): pipeline <= 7, closer calendars <= 6 (incl. users), call logs
+    // 2 per lead, attendance <= 3 with Fathom, or <= 15 with Google Meet (up to 3 token exchanges + up to 4 calls for each of 3 leads).
+    const callLogs = env.GOOGLE_MEET_SERVICE_ACCOUNT ? 6 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
   }
   try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 3); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }
