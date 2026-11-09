@@ -113,12 +113,16 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
      to, stored as `closer_host`) and who attended: Google Meet participants, read as the host through a service account
      with domain-wide delegation (`GOOGLE_MEET_SERVICE_ACCOUNT` = the key JSON; scope `meetings.space.readonly` delegated
      in the roof Workspace admin console, `google.ts`). No per-person authorization: a new closer only needs a Workspace
-     account. A host outside the Workspace (e.g. a @stonesystems.io account) cannot be read and stays stage-based.
-     Else a Fathom recording of that Meet link when `FATHOM_API_KEY` is set, else the pipeline stage. Meet records expire
-     after 30 days; the sync looks back 14. Verified live 2026-11-09 (Fathom path still unexercised).
+     account. A conference is listed for everyone who joined it, so a call hosted from outside the Workspace (e.g. a
+     @stonesystems.io account) is still read through the other closers' tokens when one of them sat in; otherwise it
+     stays stage-based. The PIT needs the `users.readonly` scope for the host lookup. The attendance source is per run:
+     Meet when the key parses, else Fathom (`FATHOM_API_KEY`), else nothing (the pipeline stage decides). Meet records
+     expire after 30 days; the sync looks back 14. Verified live 2026-11-09 (Fathom path still unexercised). The key can
+     act as any Workspace user for Meet data: treat the Worker secret as a Workspace-wide credential, rotate on exposure.
 - Pipeline stage names are mapped in `report.ts` (`STAGE_FACTS`). A renamed or new stage shows up on the page as
   "not recognised" until it is added there.
-- A sync run is budgeted for the Workers free plan (under 50 subrequests): 12 call logs and 4 closer calls per run.
+- A sync run is budgeted for the Workers free plan (under 50 subrequests, D1 calls included): 12 call logs per run
+  (4 when Meet is on) and 2 closer calls; the arithmetic is in `runOutcomeSync`.
 
 ## Native booking step
 
