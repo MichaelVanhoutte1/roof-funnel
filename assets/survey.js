@@ -17,6 +17,8 @@
   var THANKYOU_URL = mount.getAttribute("data-thankyou") || "/thankyou-page/";
   var HONEYPOT_FIELD = "contact_fax";
   var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
+  /* Version of the soft credit check disclosure shown under the submit button; sent with a full submit only. */
+  var CREDIT_CONSENT = "soft-pull-v1";
 
   var STEPS = [
     { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
@@ -460,6 +462,7 @@
     if (PREVIEW) { fullSent = true; clearAbandonTimer(); startBooking(c); return; }
     setSubmitting(true);
     var body = payloadBase();
+    body.credit_consent = CREDIT_CONSENT;
     if (partialPhone && partialPhone !== c.phone) body.superseded_phone = partialPhone;
     fetch(API + "/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (res) {

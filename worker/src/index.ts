@@ -3,6 +3,8 @@
  *
  *   POST /lead          full survey submission → D1 row → GHL inbound webhook (background)
  *   POST /lead/partial  abandonment save (phone + whatever exists) → D1 upsert → GHL (background)
+ *   Completed, qualified applications submitted under the soft credit check disclosure also get one
+ *   SimpleCheck pre-qualification (background): result → D1 credit_* columns → GHL fields → Slack.
  *   GET  /leads         admin export (Authorization: Bearer ADMIN_TOKEN) ?since=ISO&limit=N
  *   GET  /health
  *
@@ -23,7 +25,8 @@ import {
   type LeadInput,
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
-import { leadAlertMessage, postSlack } from "./slack.ts";
+import { creditAlertMessage, leadAlertMessage, postSlack } from "./slack.ts";
+import { offerAmounts, runPreQualification, type CreditResult } from "./simplecheck.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -50,18 +53,31 @@ export interface Env {
   GHL_CONTACT_SYNC?: string;
   /** Slack incoming webhook for #lead-alerts (secret). Unset = no alerts. */
   SLACK_LEAD_ALERTS_WEBHOOK?: string;
+  /** SimpleCheck Qualify API token (secret). Unset = no soft credit checks. */
+  SIMPLECHECK_API_TOKEN?: string;
+  /** "off" pauses soft credit checks without removing the token. */
+  SIMPLECHECK_MODE?: string;
+  /** Local runs only: point the check at a stub instead of api.simplecheck.ai. Never set in production. */
+  SIMPLECHECK_API_URL?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
 const HOURLY_LIMIT = 40;
 const MAX_BODY_BYTES = 16_384;
 const GHL_TIMEOUT_MS = 8_000;
+/**
+ * The disclosure the survey shows under its submit button ("By submitting, you agree to our Privacy
+ * Policy, including a soft credit check…"). The survey sends this value with a full submission; a
+ * submission without it (an older cached survey, a partial save) is never credit checked.
+ */
+const CREDIT_CONSENT_VERSION = "soft-pull-v1";
 
 type Tracking = Record<string, string | number | undefined>;
 
 type Body = LeadInput & {
   survey_partial?: boolean;
   superseded_phone?: string;
+  credit_consent?: unknown;
   tracking?: Tracking | null;
   [HONEYPOT_FIELD]?: unknown;
 };
@@ -394,7 +410,9 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", route, "country:", country);
   ctx.waitUntil(pushToGhl(env, row));
-  ctx.waitUntil(syncLeadContact(env, row, typeof tracking?.timezone === "string" ? tracking.timezone : undefined));
+  const timezone = typeof tracking?.timezone === "string" ? tracking.timezone : undefined;
+  const contactSynced = syncLeadContact(env, row, timezone);
+  ctx.waitUntil(contactSynced);
   const leadFields = {
     lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
     capital: row.capital, name: row.name, email: row.email, phone: row.phone, survey_partial: partial,
@@ -404,6 +422,13 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   // Qualified = Yes on capital + at least an email; fired once per lead, preferably now that the phone is here.
   if (qualifiedAnswer) ctx.waitUntil(slackAlertOnce(env, row, partial, tracking));
   if (qualifiedAnswer && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
+  // Soft credit check: completed + qualified + submitted under the disclosure. Routing does not wait for it.
+  if (!partial && str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION) {
+    await env.DB.prepare(
+      "UPDATE leads SET credit_consent = ?1, credit_consent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?2",
+    ).bind(CREDIT_CONSENT_VERSION, row.id).run();
+    if (qualifiedAnswer) ctx.waitUntil(creditCheckOnce(env, row, meta, timezone, contactSynced));
+  }
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
   return json({ ok: true, lead_id: row.id, route, qualified }, 200, cors);
@@ -554,6 +579,85 @@ async function relayEvent(env: Env, event: string, payload: Record<string, unkno
     if (!res.ok) console.error("[event]", event, "webhook", res.status, (await res.text().catch(() => "")).slice(0, 200));
   } catch (err) {
     console.error("[event]", event, "webhook failed:", String(err).slice(0, 200));
+  }
+}
+
+/* ---------------- soft credit check (SimpleCheck) ---------------- */
+
+function creditCheckEnabled(env: Env): boolean {
+  return !!env.SIMPLECHECK_API_TOKEN && (env.SIMPLECHECK_MODE ?? "on").toLowerCase() !== "off";
+}
+
+/** One SimpleCheck pre-qualification per lead; the result lands on the row, the GHL contact and Slack. */
+async function creditCheckOnce(
+  env: Env, row: LeadRow, meta: Meta, timezone: string | undefined, contactSynced: Promise<void>,
+): Promise<void> {
+  if (!creditCheckEnabled(env)) return;
+  const claim = await env.DB.prepare(
+    "UPDATE leads SET credit_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), credit_status = 'pending', credit_error = NULL WHERE id = ?1 AND credit_checked_at IS NULL",
+  ).bind(row.id).run();
+  if ((claim.meta.changes ?? 0) === 0) return; // already checked (or in flight) for this lead
+
+  // SimpleCheck covers US consumers only; the consent IP is the address the application came from.
+  const result: CreditResult = meta.country && meta.country !== "US"
+    ? { status: "skipped", error: "non_us" }
+    : await runPreQualification(
+        env.SIMPLECHECK_API_TOKEN!, { name: row.name, email: row.email, phone: row.phone, consentIp: meta.ip },
+        fetch, env.SIMPLECHECK_API_URL || undefined,
+      );
+
+  if (result.status !== "success") {
+    // Nothing was pulled for 'error' (transport) and 'skipped' (e.g. one-word name): release the claim so a
+    // later save of this lead (a resubmit with a full name) can still be checked.
+    await env.DB.prepare(
+      "UPDATE leads SET credit_status = ?1, credit_error = ?2, credit_checked_at = CASE WHEN ?1 IN ('error', 'skipped') THEN NULL ELSE credit_checked_at END WHERE id = ?3",
+    ).bind(result.status, result.error, row.id).run();
+    console.log("[credit] lead", row.id, result.status, result.error);
+    return;
+  }
+
+  await env.DB.prepare(
+    `UPDATE leads SET credit_status = 'success', credit_error = NULL, credit_prequal_id = ?1, credit_score = ?2,
+       credit_offer_status = ?3, credit_offer_amount_1 = ?4, credit_offer_amount_2 = ?5, credit_dti = ?6,
+       credit_income = ?7, credit_household_income = ?8, credit_freeze = ?9 WHERE id = ?10`,
+  ).bind(
+    result.prequalId, result.score, result.offerStatus, result.offerAmount1, result.offerAmount2, result.dti,
+    result.income, result.householdIncome, result.creditFreeze, row.id,
+  ).run();
+  console.log("[credit] lead", row.id, "checked", result.score == null ? "(no score returned)" : "(score stored)");
+
+  const amount = offerAmounts(result);
+  if (env.SLACK_LEAD_ALERTS_WEBHOOK) {
+    try {
+      await postSlack(env.SLACK_LEAD_ALERTS_WEBHOOK, creditAlertMessage({
+        id: row.id, name: row.name, score: result.score, offerStatus: result.offerStatus, offerAmount: amount,
+        dti: result.dti, income: result.income, creditFreeze: result.creditFreeze,
+      }));
+    } catch (err) {
+      console.error("[credit] slack failed for lead", row.id, String(err).slice(0, 200));
+    }
+  }
+
+  // After the first contact sync, so the two upserts never race to create the same contact.
+  await contactSynced.catch(() => {});
+  const cfg = contactsConfig(env);
+  if (!cfg) return;
+  try {
+    await upsertSurveyContact(cfg, {
+      name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
+      timeline: row.timeline, business_owner: row.business_owner, capital: row.capital,
+      qualified: row.capital ? /^Yes/.test(row.capital) : null,
+      credit: {
+        score: result.score == null ? "No credit file matched" : String(result.score),
+        offer_status: result.offerStatus,
+        offer_amount: amount,
+        dti: result.dti == null ? null : `${result.dti}%`,
+        income: result.income == null ? null : `$${Math.round(result.income).toLocaleString("en-US")}`,
+        credit_freeze: result.creditFreeze,
+      },
+    });
+  } catch (err) {
+    console.error("[credit] GHL update failed for lead", row.id, String(err).slice(0, 300));
   }
 }
 
