@@ -90,3 +90,12 @@ test("meetAttendance: participants merged from several records of one call (host
   ], Date.UTC(2026, 10, 6));
   assert.deepEqual(r, { attended: "showed", minutes: 48 });
 });
+
+test("meetAttendance: the host alone across two records of the call is one person, so no_show", () => {
+  const T = (m: number) => new Date(Date.UTC(2026, 10, 5, 20, 56 + m)).toISOString();
+  const r = meetAttendance([
+    { signedinUser: { user: "users/1", displayName: "Calvin" }, earliestStartTime: T(0), latestEndTime: T(8) },
+    { signedinUser: { user: "users/1", displayName: "Calvin" }, earliestStartTime: T(20), latestEndTime: T(27) },
+  ], Date.UTC(2026, 10, 6));
+  assert.deepEqual(r, { attended: "no_show", minutes: 0 });
+});
