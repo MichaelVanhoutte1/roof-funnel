@@ -6,6 +6,11 @@
  *   Completed, qualified applications submitted under the soft credit check disclosure also get one
  *   SimpleCheck pre-qualification (background): result → D1 credit_* columns → GHL fields → Slack.
  *   GET  /leads         admin export (Authorization: Bearer ADMIN_TOKEN) ?since=ISO&limit=N
+ *   /admin/*            report, leads, disqualification rules, outcome sync (admin.ts; same bearer token)
+ *   cron (every 30 min) outcome sync from GHL / Fathom / Google Meet (outcomes.ts)
+ *
+ * Routing: a completed application goes to the calendar unless one of its answers is switched to
+ * "disqualify" in the rules, or a credit rule is on and the soft credit check result breaks it.
  *   GET  /health
  *
  * Gates, in order: CORS origin → rate limit (8/min binding, 40/h in D1) → honeypot → IP country
@@ -13,7 +18,6 @@
  * success so bots and out-of-market visitors learn nothing; nothing of theirs is stored.
  */
 import {
-  CAPITAL_DQ_VALUE,
   classifyFullSubmission,
   classifyPartialSubmission,
   isFakeLeadIdentity,
@@ -26,7 +30,10 @@ import {
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
 import { creditAlertMessage, creditProblemMessage, leadAlertMessage, postSlack } from "./slack.ts";
-import { identityKey, offerAmounts, runPreQualification, type CreditResult } from "./simplecheck.ts";
+import { identityKey, offerAmounts, runPreQualification, type CreditReport, type CreditResult } from "./simplecheck.ts";
+import { answerDqReason, answersQualify, creditDqReason, creditRulesApply, publicDqKind } from "./rules.ts";
+import { handleAdmin, loadRules } from "./admin.ts";
+import { runOutcomeSync } from "./outcomes.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -61,6 +68,11 @@ export interface Env {
   SIMPLECHECK_DAILY_CAP?: string;
   /** Local runs only: point the check at a stub on localhost. Any other host is ignored. */
   SIMPLECHECK_API_URL?: string;
+  /** Closer-call attendance for the roof business (all optional; see outcomes.ts). */
+  FATHOM_API_KEY?: string;
+  GOOGLE_MEET_CLIENT_ID?: string;
+  GOOGLE_MEET_CLIENT_SECRET?: string;
+  GOOGLE_MEET_REFRESH_TOKENS?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
@@ -73,6 +85,11 @@ const GHL_TIMEOUT_MS = 8_000;
  * submission without it (an older cached survey, a partial save) is never credit checked.
  */
 const CREDIT_CONSENT_VERSION = "soft-pull-v1";
+/**
+ * With a credit rule switched on, the submit waits this long for the check before routing.
+ * If the check is not back by then the lead is let through to the calendar (it still finishes in the background).
+ */
+const CREDIT_ROUTING_WAIT_MS = 10_000;
 
 type Tracking = Record<string, string | number | undefined>;
 
@@ -197,6 +214,8 @@ type LeadRow = {
   status: "partial" | "full";
   route: "calendar" | "dq" | null;
   qualified: boolean | null;
+  /** 'answer:<question>' or 'credit:<rule>' on a disqualified full submit. */
+  dq_reason?: string | null;
   phone: string;
   superseded_phone?: string;
   name?: string;
@@ -289,26 +308,27 @@ async function upsertLead(env: Env, lead: Omit<LeadRow, "id">, meta: Meta): Prom
       `UPDATE leads SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status = ?1, route = ?2, qualified = ?3,
          phone = ?4, superseded_phone = COALESCE(?5, superseded_phone), name = COALESCE(?6, name), email = COALESCE(?7, email),
          city = COALESCE(?8, city), timeline = COALESCE(?9, timeline), business_owner = COALESCE(?10, business_owner),
-         capital = COALESCE(?11, capital), tracking = COALESCE(?12, tracking), ghl_status = NULL, ghl_error = NULL
-       WHERE id = ?13`,
+         capital = COALESCE(?11, capital), tracking = COALESCE(?12, tracking), ghl_status = NULL, ghl_error = NULL,
+         dq_reason = CASE WHEN ?1 = 'full' THEN ?13 ELSE dq_reason END
+       WHERE id = ?14`,
     )
       .bind(
         lead.status, lead.route, lead.qualified == null ? null : lead.qualified ? 1 : 0, lead.phone,
         lead.superseded_phone ?? null, lead.name ?? null, lead.email ?? null, lead.city ?? null, lead.timeline ?? null,
-        lead.business_owner ?? null, lead.capital ?? null, tracking, existing.id,
+        lead.business_owner ?? null, lead.capital ?? null, tracking, lead.dq_reason ?? null, existing.id,
       )
       .run();
     return { ...lead, id: existing.id };
   }
   const res = await env.DB.prepare(
     `INSERT INTO leads (status, route, qualified, phone, superseded_phone, name, email, city, timeline, business_owner, capital,
-       tracking, ip, country, user_agent)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
+       tracking, ip, country, user_agent, dq_reason)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
   )
     .bind(
       lead.status, lead.route, lead.qualified == null ? null : lead.qualified ? 1 : 0, lead.phone,
       lead.superseded_phone ?? null, lead.name ?? null, lead.email ?? null, lead.city ?? null, lead.timeline ?? null,
-      lead.business_owner ?? null, lead.capital ?? null, tracking, meta.ip, meta.country, meta.ua,
+      lead.business_owner ?? null, lead.capital ?? null, tracking, meta.ip, meta.country, meta.ua, lead.dq_reason ?? null,
     )
     .run();
   return { ...lead, id: Number(res.meta.last_row_id) };
@@ -389,8 +409,12 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   const email = isValidEmail(input.email) ? input.email.trim() : undefined;
   const tracking = pickTracking(body.tracking);
 
-  const qualified = partial ? null : input.capital !== CAPITAL_DQ_VALUE;
-  const route = partial ? null : qualified ? "calendar" : "dq";
+  const rules = await loadRules(env.DB);
+  const answers = { timeline: input.timeline, business_owner: input.business_owner, capital: input.capital };
+  // The answer rules decide first; a credit rule can still turn a calendar route into "dq" further down.
+  let dqReason: string | null = partial ? null : answerDqReason(rules, answers);
+  let qualified: boolean | null = partial ? null : dqReason === null;
+  let route: "calendar" | "dq" | null = partial ? null : qualified ? "calendar" : "dq";
 
   const row = await upsertLead(
     env,
@@ -398,6 +422,7 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
       status: partial ? "partial" : "full",
       route,
       qualified,
+      dq_reason: dqReason,
       phone,
       superseded_phone,
       name: input.name,
@@ -413,30 +438,54 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", route, "country:", country);
   ctx.waitUntil(pushToGhl(env, row));
   const timezone = typeof tracking?.timezone === "string" ? tracking.timezone : undefined;
-  const contactSynced = syncLeadContact(env, row, timezone);
+
+  // Soft credit check on a completed application. It never fails the submit, and the consent flag counts
+  // only from our own pages: a request without an allowed Origin never triggers a check.
+  let credit: Promise<CreditOutcome> | null = null;
+  if (!partial) {
+    const origin = request.headers.get("Origin");
+    const consent = str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin);
+    credit = creditFlow(env, row, meta, { consent, qualified: dqReason === null });
+    ctx.waitUntil(credit);
+    if (dqReason === null && consent && creditCheckEnabled(env) && creditRulesApply(rules, answers)) {
+      // A credit rule is switched on, so routing waits for the result. No result in time = the lead goes through.
+      const outcome = await Promise.race([
+        credit,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), CREDIT_ROUTING_WAIT_MS)),
+      ]);
+      const broken = outcome?.result?.status === "success" ? creditDqReason(rules, outcome.result) : null;
+      if (broken) {
+        try {
+          await env.DB.prepare("UPDATE leads SET route = 'dq', qualified = 0, dq_reason = ?1 WHERE id = ?2").bind(broken, row.id).run();
+          dqReason = broken; qualified = false; route = "dq";
+          row.route = "dq"; row.qualified = false; row.dq_reason = broken;
+          console.log(`[${tag}] lead`, row.id, "disqualified by a credit rule");
+        } catch (err) {
+          // Could not record it, so the lead keeps the calendar rather than being turned away off the books.
+          console.error(`[${tag}] lead`, row.id, "credit disqualification not stored:", String(err).slice(0, 160));
+        }
+      }
+    }
+  }
+
+  // Qualified = sent to the calendar (completed) / nothing disqualifying among the answers so far (partial).
+  const isQualified = partial ? answersQualify(rules, answers) : dqReason === null;
+  const contactSynced = syncLeadContact(env, row, timezone, isQualified);
   ctx.waitUntil(contactSynced);
   const leadFields = {
     lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
     capital: row.capital, name: row.name, email: row.email, phone: row.phone, survey_partial: partial,
   };
-  const qualifiedAnswer = /^Yes/.test(row.capital ?? "");
-  ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", { ...leadFields, qualified: qualifiedAnswer }, tracking, country)));
-  // Qualified = Yes on capital + at least an email; fired once per lead, preferably now that the phone is here.
-  if (qualifiedAnswer) ctx.waitUntil(slackAlertOnce(env, row, partial, tracking));
-  if (qualifiedAnswer && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
-  // Soft credit check on a completed application; background only, so capture and routing never wait on it.
-  // The consent flag counts only from our own pages: a request without an allowed Origin never triggers a check.
-  if (!partial) {
-    const origin = request.headers.get("Origin");
-    ctx.waitUntil(creditFlow(env, row, meta, {
-      consent: str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin),
-      qualified: qualifiedAnswer,
-      contactSynced,
-    }));
-  }
+  ctx.waitUntil(relayEvent(env, "phone", eventPayload("phone", { ...leadFields, qualified: isQualified }, tracking, country)));
+  // One alert and one "qualified" event per qualified lead, preferably now that the phone is here.
+  const alerted = isQualified ? slackAlertOnce(env, row, partial, tracking).catch(() => {}) : Promise.resolve();
+  ctx.waitUntil(alerted);
+  if (isQualified && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
+  // The team sees a credit result only for leads that stay qualified, after the lead alert.
+  if (credit && isQualified) ctx.waitUntil(publishCredit(env, row, credit, contactSynced, alerted));
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
-  return json({ ok: true, lead_id: row.id, route, qualified }, 200, cors);
+  return json({ ok: true, lead_id: row.id, route, qualified, ...(route === "dq" ? { dq: publicDqKind(dqReason) } : {}) }, 200, cors);
 }
 
 async function handleExport(request: Request, env: Env): Promise<Response> {
@@ -471,15 +520,15 @@ function contactsConfig(env: Env): ContactsConfig | null {
 }
 
 /** Lead row → GHL contact; records the outcome on the row. Resolves to the contact id, or null. Never rejects. */
-async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined): Promise<string | null> {
+async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined, qualified: boolean): Promise<string | null> {
   const cfg = contactsConfig(env);
   if (!cfg) return null;
-  if (syncMode(env) === "qualified" && !/^Yes/.test(row.capital ?? "")) return null; // only qualified leads go to GHL
+  if (syncMode(env) === "qualified" && !qualified) return null; // only qualified leads go to GHL
   try {
     const id = await upsertSurveyContact(cfg, {
       name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
       timeline: row.timeline, business_owner: row.business_owner, capital: row.capital,
-      qualified: row.capital ? /^Yes/.test(row.capital) : null,
+      qualified: row.capital ? qualified : null,
     });
     await env.DB.prepare("UPDATE leads SET ghl_contact_id = ?1 WHERE id = ?2").bind(id, row.id).run();
     console.log("[contact] lead", row.id, "→ GHL contact", id);
@@ -532,7 +581,7 @@ async function handleEmailCapture(request: Request, env: Env, ctx: ExecutionCont
       const id = await upsertSurveyContact(cfg, {
         name: input.name, email, city: input.city, timezone: typeof tracking?.timezone === "string" ? tracking.timezone : undefined,
         timeline: input.timeline, business_owner: input.business_owner, capital: input.capital,
-        qualified: input.capital ? /^Yes/.test(input.capital) : null,
+        qualified: input.capital ? answersQualify(await loadRules(env.DB), { timeline: input.timeline, business_owner: input.business_owner, capital: input.capital }) : null,
       });
       await env.DB.prepare("UPDATE email_captures SET ghl_contact_id = ?1, ghl_status = 'sent', ghl_error = NULL WHERE email = ?2").bind(id, email).run();
       console.log("[contact] email-only → GHL contact", id);
@@ -617,10 +666,13 @@ function creditEndpoint(env: Env): string | undefined {
   }
 }
 
-type CreditOpts = { consent: boolean; qualified: boolean; contactSynced: Promise<string | null> };
+type CreditOpts = { consent: boolean; qualified: boolean };
+/** `fresh` = this request ran (or copied) the check; false = an earlier result that is already on the row. */
+type CreditOutcome = { result: CreditResult | null; fresh: boolean };
+const NO_CREDIT: CreditOutcome = { result: null, fresh: false };
 
-/** Background step after every completed application. Never throws: capture, routing and booking do not depend on it. */
-async function creditFlow(env: Env, row: LeadRow, meta: Meta, opts: CreditOpts): Promise<void> {
+/** Runs after every completed application. Never rejects: capture, routing and booking do not depend on it. */
+async function creditFlow(env: Env, row: LeadRow, meta: Meta, opts: CreditOpts): Promise<CreditOutcome> {
   try {
     const identity = await identityKey(row.name, row.email, row.phone);
     // Rows are found by phone. If this row now carries someone else (or corrected details), the earlier
@@ -631,16 +683,17 @@ async function creditFlow(env: Env, row: LeadRow, meta: Meta, opts: CreditOpts):
          ${CREDIT_RESULT_COLUMNS.map((c) => `${c} = NULL`).join(", ")}
        WHERE id = ?1 AND credit_identity IS NOT NULL AND credit_identity <> ?2`,
     ).bind(row.id, identity).run();
-    if (!opts.consent) return;
+    if (!opts.consent) return NO_CREDIT;
     // Consent evidence is written only while no check is recorded, so it always describes the check that used it.
     await env.DB.prepare(
       `UPDATE leads SET credit_consent = ?1, credit_consent_at = ${SQL_NOW}, credit_consent_ip = ?2, credit_identity = ?3
        WHERE id = ?4 AND credit_checked_at IS NULL`,
     ).bind(CREDIT_CONSENT_VERSION, meta.ip, identity, row.id).run();
-    if (!opts.qualified || !creditCheckEnabled(env)) return;
-    await creditCheckOnce(env, row, meta, identity, opts.contactSynced);
+    if (!opts.qualified || !creditCheckEnabled(env)) return NO_CREDIT;
+    return await creditCheckOnce(env, row, meta, identity);
   } catch (err) {
     console.error("[credit] flow failed for lead", row.id, String(err).slice(0, 200));
+    return NO_CREDIT;
   }
 }
 
@@ -650,6 +703,22 @@ type CreditColumns = {
   credit_income: number | null; credit_household_income: number | null; credit_freeze: string | null;
 };
 
+function creditFromColumns(r: CreditColumns): CreditResult {
+  return {
+    status: "success", prequalId: r.credit_prequal_id, score: r.credit_score, offerStatus: r.credit_offer_status,
+    offerAmount1: r.credit_offer_amount_1, offerAmount2: r.credit_offer_amount_2, dti: r.credit_dti,
+    income: r.credit_income, householdIncome: r.credit_household_income, creditFreeze: r.credit_freeze,
+  };
+}
+
+/** The result already stored on this row for this person (a resubmit), so the rules still apply to it. */
+async function storedCreditResult(env: Env, rowId: number, identity: string): Promise<CreditResult | null> {
+  const r = await env.DB.prepare(
+    `SELECT credit_status, ${CREDIT_RESULT_COLUMNS.join(", ")} FROM leads WHERE id = ?1 AND credit_identity = ?2`,
+  ).bind(rowId, identity).first<CreditColumns & { credit_status: string | null }>();
+  return r && r.credit_status === "success" ? creditFromColumns(r) : null;
+}
+
 /** The same person checked on another row in the last 30 days (a returning applicant): reuse it, do not pull again. */
 async function recentResultFor(env: Env, identity: string, exceptId: number): Promise<CreditResult | null> {
   const r = await env.DB.prepare(
@@ -658,12 +727,7 @@ async function recentResultFor(env: Env, identity: string, exceptId: number): Pr
        AND credit_checked_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days')
      ORDER BY id DESC LIMIT 1`,
   ).bind(identity, exceptId).first<CreditColumns>();
-  if (!r) return null;
-  return {
-    status: "success", prequalId: r.credit_prequal_id, score: r.credit_score, offerStatus: r.credit_offer_status,
-    offerAmount1: r.credit_offer_amount_1, offerAmount2: r.credit_offer_amount_2, dti: r.credit_dti,
-    income: r.credit_income, householdIncome: r.credit_household_income, creditFreeze: r.credit_freeze,
-  };
+  return r ? creditFromColumns(r) : null;
 }
 
 async function overDailyCap(env: Env, exceptId: number): Promise<boolean> {
@@ -699,15 +763,14 @@ async function notifyCreditProblemOnce(env: Env, rowId: number, key: string, rea
   }
 }
 
-/** One SimpleCheck pre-qualification per lead row; the result lands on the row, the GHL contact and Slack. */
-async function creditCheckOnce(
-  env: Env, row: LeadRow, meta: Meta, identity: string, contactSynced: Promise<string | null>,
-): Promise<void> {
+/** One SimpleCheck pre-qualification per person per lead row; the result lands on the row. */
+async function creditCheckOnce(env: Env, row: LeadRow, meta: Meta, identity: string): Promise<CreditOutcome> {
   const claim = await env.DB.prepare(
     `UPDATE leads SET credit_checked_at = ${SQL_NOW}, credit_status = 'pending', credit_error = NULL
      WHERE id = ?1 AND credit_checked_at IS NULL AND credit_consent = ?2 AND credit_identity = ?3`,
   ).bind(row.id, CREDIT_CONSENT_VERSION, identity).run();
-  if ((claim.meta.changes ?? 0) === 0) return; // already checked (or in flight) for this person on this row
+  // Already checked (or in flight) for this person on this row: hand back what is stored, if anything.
+  if ((claim.meta.changes ?? 0) === 0) return { result: await storedCreditResult(env, row.id, identity), fresh: false };
 
   let result: CreditResult;
   if (meta.country && meta.country !== "US") {
@@ -733,7 +796,7 @@ async function creditCheckOnce(
     console.log("[credit] lead", row.id, result.status); // the reason is on the row, not in the log
     const problem = creditProblem(env, result);
     if (problem) await notifyCreditProblemOnce(env, row.id, result.error, problem);
-    return;
+    return { result, fresh: true };
   }
 
   try {
@@ -747,12 +810,21 @@ async function creditCheckOnce(
     ).run();
     console.log("[credit] lead", row.id, "checked");
   } catch (err) {
-    // The result is still sent to Slack and GHL below, so a paid report is not lost with the write.
+    // The result still reaches Slack and GHL, so a paid report is not lost with the write.
     console.error("[credit] lead", row.id, "result not stored:", String(err).slice(0, 120));
   }
+  return { result, fresh: true };
+}
 
-  const amount = offerAmounts(result);
-  const report = result;
+/** A fresh credit result for a lead that stays qualified: a Slack follow-up after the lead alert, and the GHL fields. */
+async function publishCredit(
+  env: Env, row: LeadRow, credit: Promise<CreditOutcome>, contactSynced: Promise<string | null>, after: Promise<unknown>,
+): Promise<void> {
+  const outcome = await credit;
+  if (!outcome.fresh || outcome.result?.status !== "success") return;
+  const report: CreditReport = outcome.result;
+  const amount = offerAmounts(report);
+  await after.catch(() => {});
   const toSlack = async (): Promise<void> => {
     if (!env.SLACK_LEAD_ALERTS_WEBHOOK) return;
     try {
@@ -843,8 +915,11 @@ async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): P
   if (typeof fields.phone === "string") { const d = normalizePhoneDigits10(fields.phone); if (d) fields.phone = `+1${d}`; else delete fields.phone; }
   if (typeof fields.email === "string" && !isValidEmail(fields.email)) delete fields.email;
   if (event === "qualified") {
-    // Qualified needs a Yes on the capital question and at least an email on file.
-    if (!/^Yes/.test(String(fields.capital ?? "")) || !fields.email) return json({ ok: true, silent: true }, 200, cors);
+    // Qualified needs answers that pass the rules (capital answered, nothing disqualifying) and an email on file.
+    const rules = await loadRules(env.DB);
+    const given = (k: string): string | undefined => (typeof fields[k] === "string" ? (fields[k] as string) : undefined);
+    const passes = answersQualify(rules, { timeline: given("timeline"), business_owner: given("business_owner"), capital: given("capital") });
+    if (!passes || !fields.email) return json({ ok: true, silent: true }, 200, cors);
     fields.qualified = true;
   }
   const payload = eventPayload(event, fields, pickTracking(raw.tracking), country);
@@ -927,7 +1002,7 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
     const contactId = await upsertSurveyContact(cfg, {
       name: lead.name, email: lead.email, phone, timezone: tz, city: lead.city,
       timeline: lead.timeline, business_owner: lead.business_owner, capital: lead.capital,
-      qualified: lead.capital ? /^Yes/.test(lead.capital) : null,
+      qualified: true, // only a lead routed to the calendar gets this far
     });
     const title = `${lead.name ?? "Dealer"} - ${env.APPOINTMENT_TITLE ?? "Dealer Strategy Session"}`;
     const appointmentId = await createAppointment(cfg, {
@@ -956,6 +1031,16 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     if (request.method === "GET" && path === "/health") return json({ ok: true }, 200, {});
     if (request.method === "GET" && path === "/leads") return handleExport(request, env);
+    if (path.startsWith("/admin/")) {
+      const cors = corsHeaders(request, env);
+      if (!originAllowed(request, env)) return json({ ok: false, error: "Forbidden" }, 403, cors);
+      try {
+        return await handleAdmin(request, env, path, cors, json);
+      } catch (err) {
+        console.error("[admin]", path, String(err).slice(0, 200));
+        return json({ ok: false, error: "Something went wrong" }, 500, cors);
+      }
+    }
     if (request.method === "GET" && path === "/slots") return handleSlots(request, env);
     if (request.method === "POST" && path === "/event") return handleEvent(request, env, ctx);
     if (request.method === "POST" && path === "/contact") return handleEmailCapture(request, env, ctx);
@@ -963,5 +1048,8 @@ export default {
     if (request.method === "POST" && path === "/lead") return handleLead(request, env, ctx, false);
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
     return json({ ok: false, error: "Not found" }, 404, corsHeaders(request, env));
+  },
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runOutcomeSync(env));
   },
 } satisfies ExportedHandler<Env>;

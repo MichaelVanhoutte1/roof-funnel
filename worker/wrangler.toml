@@ -36,6 +36,10 @@ CORTANA_WEBHOOKS = """{
   "qualified": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/eb34c0b6-8aa1-4a13-bcb9-2b9c029d9a97"
 }"""
 
+# Outcome sync (GHL pipeline, setter call log, closer appointments, Fathom / Google Meet attendance).
+[triggers]
+crons = ["*/30 * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "roof-funnel-leads"
