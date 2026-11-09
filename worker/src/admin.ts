@@ -116,7 +116,7 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
         setter_call_seconds: l.setter_call_seconds, setter_calls: l.setter_calls,
         setter: !o.booked ? null : o.setterShowed ? "showed" : o.setterNoShow ? "no_show" : "pending",
         closer_start: l.closer_start,
-        closer: !o.toCloser ? null : o.closerShowed ? "showed" : o.closerNoShow ? "no_show" : "pending",
+        closer: !o.closerBooked ? null : o.closerShowed ? "showed" : o.closerNoShow ? "no_show" : "pending",
         closer_source: l.closer_attended_source,
         won: o.won, cash: o.cash,
       };
