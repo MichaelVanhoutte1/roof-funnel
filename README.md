@@ -112,11 +112,13 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
      opportunity of a contact, written to that contact's newest lead row only.
   2. GHL call log for booked leads. The setter call is a phone call: a completed call of 2 minutes or more = showed
      (`SHOW_MIN_CALL_SECONDS`; measured on 99 past booked leads: every lead moved past the setter had one, no no-show did).
-  3. Closer appointments (calendars named "…closer…", Google Meet links) and who attended: Google Meet participants when
-     `GOOGLE_MEET_CLIENT_ID` / `GOOGLE_MEET_CLIENT_SECRET` / `GOOGLE_MEET_REFRESH_TOKENS` are set, else a Fathom recording
-     of that Meet link when `FATHOM_API_KEY` (the roof business's own Fathom account) is set, else the pipeline stage.
-     **The Google Meet and Fathom steps have not run against the roof accounts yet** (no keys existed when they were
-     written); verify the first sync after adding the secrets.
+  3. Closer appointments (calendars named "…closer…", Google Meet links, host = the GHL user the appointment is assigned
+     to, stored as `closer_host`) and who attended: Google Meet participants, read as the host through a service account
+     with domain-wide delegation (`GOOGLE_MEET_SERVICE_ACCOUNT` = the key JSON; scope `meetings.space.readonly` delegated
+     in the roof Workspace admin console, `google.ts`). No per-person authorization: a new closer only needs a Workspace
+     account. A host outside the Workspace (e.g. a @stonesystems.io account) cannot be read and stays stage-based.
+     Else a Fathom recording of that Meet link when `FATHOM_API_KEY` is set, else the pipeline stage. Meet records expire
+     after 30 days; the sync looks back 14. Verified live 2026-11-09 (Fathom path still unexercised).
 - Pipeline stage names are mapped in `report.ts` (`STAGE_FACTS`). A renamed or new stage shows up on the page as
   "not recognised" until it is added there.
 - A sync run is budgeted for the Workers free plan (under 50 subrequests): 12 call logs and 4 closer calls per run.

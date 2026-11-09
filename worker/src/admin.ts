@@ -96,7 +96,7 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
         ghl: !!(env.GHL_PIT && env.GHL_LOCATION_ID),
         simplecheck: !!env.SIMPLECHECK_API_TOKEN && (env.SIMPLECHECK_MODE ?? "on").toLowerCase() !== "off",
         fathom: !!env.FATHOM_API_KEY,
-        googleMeet: !!(env.GOOGLE_MEET_CLIENT_ID && env.GOOGLE_MEET_CLIENT_SECRET && env.GOOGLE_MEET_REFRESH_TOKENS),
+        googleMeet: !!env.GOOGLE_MEET_SERVICE_ACCOUNT,
       },
     }, 200, cors);
   }
