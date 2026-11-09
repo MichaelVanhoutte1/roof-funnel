@@ -9,7 +9,7 @@ builder applied, so the rendered result is the same pixel for pixel.
 
 | Path | Source GHL page | Notes |
 | --- | --- | --- |
-| `/` | Funnel (`/`) | Opt-in: Vidalytics VSL + dealer application survey |
+| `/` | Funnel (`/`) | Opt-in: Cortana video VSL + dealer application survey |
 | `/thankyou-page/` | Thankyou Page | post-booking page, 15 proof screenshots |
 | `/thankyou/` | Thankyou (clone, 2026-10-11) | same page without the first two proof screenshots |
 | `/privacy-policy/` | Privacy Policy | |
@@ -69,7 +69,7 @@ empty too. Set them with `npx wrangler secret put GHL_PIT` and the two ids in `w
 
 ## What is real vs. placeholder
 
-Nothing is a placeholder. All embeds are the originals (Vidalytics VSL, Wistia players, Google Drive previews, Google Slides warranty deck) and all 17 images that were
+Nothing is a placeholder. All embeds are the originals (Cortana video VSL and thank-you video, Wistia players, Google Drive previews, Google Slides warranty deck) and all 17 images that were
 inlined as base64 on the GHL pages were decoded into real files under `assets/`.
 
 ## Tracking and third-party hooks
