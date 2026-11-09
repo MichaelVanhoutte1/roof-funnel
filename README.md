@@ -86,6 +86,38 @@ and booking never wait on it and never fail because of it.
   against a stub (the override is honoured for localhost only), plus `--var "CORTANA_WEBHOOKS:{}"` so test leads
   never reach the real step webhooks.
 
+## Lead tracking, rules and outcomes (admin page)
+
+`/admin/` is a private page (noindex; sign in with the Worker's `ADMIN_TOKEN`, kept in that tab's sessionStorage so the
+vendor scripts on the public funnel pages can never read it; the page itself loads no third-party script).
+It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token, allowed `Origin` only).
+
+- **Overview** (`report.ts`): leads, book %, setter show %, closer show %, close % and cash per booked call, per answer,
+  credit band, funnel result, ad source and device.
+- **Rules** (`rules.ts`, stored in D1 `settings.rules`): a disqualify switch per answer plus credit rules (minimum score,
+  minimum financing offered, minimum income, no credit file, credit freeze). Defaults = only the "No" capital answer.
+  A disqualified lead is stored with `route = 'dq'` and `dq_reason` (`answer:<question>` / `credit:<rule>`) and never sees
+  the calendar; it is not alerted in Slack, not synced to GHL and not sent as a "qualified" event.
+- **Credit rules** make the submit wait for the soft credit check (at most 10 s, `CREDIT_ROUTING_WAIT_MS`). A check that
+  cannot run never disqualifies anyone; a late one lets the lead see the calendar, and `/book` judges the stored result
+  again before a call is booked. A resubmit (with or without the consent flag) is judged on the stored result. With no
+  credit rule on, the check stays in the background.
+- **Deploy order:** `npm run migrate`, then `npm run deploy`. A Worker running without migration 0007 still captures and
+  routes leads on the default rules (the route reason and the rules table are best effort).
+- **Outcomes** (`outcomes.ts`, cron every 30 minutes and the page's "Sync outcomes now"; all read-only):
+  1. GHL Sales Pipeline stage, status and value per contact (setter DQ, to closer, won, cash): the most recently changed
+     opportunity of a contact, written to that contact's newest lead row only.
+  2. GHL call log for booked leads. The setter call is a phone call: a completed call of 2 minutes or more = showed
+     (`SHOW_MIN_CALL_SECONDS`; measured on 99 past booked leads: every lead moved past the setter had one, no no-show did).
+  3. Closer appointments (calendars named "…closer…", Google Meet links) and who attended: Google Meet participants when
+     `GOOGLE_MEET_CLIENT_ID` / `GOOGLE_MEET_CLIENT_SECRET` / `GOOGLE_MEET_REFRESH_TOKENS` are set, else a Fathom recording
+     of that Meet link when `FATHOM_API_KEY` (the roof business's own Fathom account) is set, else the pipeline stage.
+     **The Google Meet and Fathom steps have not run against the roof accounts yet** (no keys existed when they were
+     written); verify the first sync after adding the secrets.
+- Pipeline stage names are mapped in `report.ts` (`STAGE_FACTS`). A renamed or new stage shows up on the page as
+  "not recognised" until it is added there.
+- A sync run is budgeted for the Workers free plan (under 50 subrequests): 12 call logs and 4 closer calls per run.
+
 ## Native booking step
 
 After a qualified submit the widget calls `GET /slots` on the Worker. When `GHL_PIT`, `GHL_LOCATION_ID`

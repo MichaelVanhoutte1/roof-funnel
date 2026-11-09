@@ -1,0 +1,58 @@
+/* Private lead tracking page. Harbor palette, same tokens as the funnel pages. */
+:root{--bg:#EEF4F8;--card:#FFF;--border:#D3DFE8;--heading:#0B2538;--text:#28394A;--muted:#64788A;--primary:#0E7FA6;--primary-dark:#0A6585;--good:#1F7A4D;--warn:#9A6200;--bad:#B3261E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+#admin{max-width:1400px;margin:0 auto;padding:20px 16px 60px}
+h1{margin:0;font-size:22px;color:var(--heading)}
+h2{margin:0 0 10px;font-size:16px;color:var(--heading)}
+p{margin:0 0 10px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+.bar .grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+.btn{border:1px solid var(--border);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--primary-dark)}
+.btn[disabled]{opacity:.55;cursor:default}
+select,input[type=date],input[type=number],input[type=password],input[type=text]{border:1px solid var(--border);border-radius:8px;padding:7px 10px;background:var(--card)}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{border:0;background:none;padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);font-weight:600}
+.tab[aria-selected=true]{color:var(--heading);border-bottom-color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.stat .label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.stat .value{font-size:26px;font-weight:700;color:var(--heading);margin-top:2px}
+.stat .sub{font-size:12px;color:var(--muted)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--border)}
+th:first-child,td:first-child{text-align:left;white-space:normal;min-width:170px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;cursor:default}
+tbody tr:last-child td{border-bottom:0}
+td.rate{font-weight:600;color:var(--heading)}
+td.left,th.left{text-align:left}
+.pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:600;background:#E6EEF3;color:var(--text)}
+.pill.good{background:#DDF1E6;color:var(--good)}
+.pill.bad{background:#FADDDA;color:var(--bad)}
+.pill.warn{background:#FCEBCB;color:var(--warn)}
+.notice{border-radius:10px;padding:10px 12px;margin-bottom:16px;border:1px solid var(--border);background:var(--card)}
+.notice.warn{border-color:#E9C46A;background:#FFF8E6}
+.notice.bad{border-color:#E7A29D;background:#FDF0EF}
+.rule{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.rule:last-child{border-bottom:0}
+.rule label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600}
+.rule input[type=checkbox]{width:18px;height:18px;accent-color:var(--bad)}
+.rule .is-dq{color:var(--bad)}
+.field{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.field:last-child{border-bottom:0}
+.field input[type=number]{width:140px;text-align:right}
+.login{max-width:420px;margin:12vh auto 0}
+.login input{width:100%;margin:8px 0 12px}
+.error{color:var(--bad);font-weight:600}
+.legend{columns:2;column-gap:28px;font-size:13px;color:var(--muted)}
+.legend p{break-inside:avoid}
+@media(max-width:800px){.legend{columns:1}}

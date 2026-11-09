@@ -10,7 +10,8 @@ export type GhlConfig = { token: string; locationId: string; calendarId: string 
 
 export type SlotsByDate = Record<string, string[]>;
 
-async function ghl<T>(cfg: GhlConfig, path: string, init: RequestInit = {}): Promise<T> {
+/** One authenticated GHL call. Pass `headers: { Version }` for endpoints on a newer API version. */
+export async function ghl<T>(cfg: GhlConfig, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE + path, {
     ...init,
     headers: {

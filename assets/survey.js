@@ -329,7 +329,7 @@
   }
 
   function sendPartial(force) {
-    if (partialSent || fullSent) return;
+    if (partialSent || fullSent || state.submitting) return; /* the full submit is on its way (it can take ~10 s) */
     var c = readContact();
     if (!c.phone || c.digits.length !== 10) return;
     if (!force && Date.now() - phoneEditedAt < PHONE_SETTLE_MS) return;
@@ -477,7 +477,7 @@
         }
         fullSent = true; clearAbandonTimer();
         if (r.data.silent) showPanel("thanks", c);
-        else if (r.data.route === "dq") showPanel("dq", c);
+        else if (r.data.route === "dq") showPanel(r.data.dq === "capital" || !r.data.dq ? "dq" : "nofit", c);
         else startBooking(c);
       })
       .catch(function () { setError("phone", "Something went wrong. Please try again."); })
@@ -493,6 +493,11 @@
       panel.appendChild(el("div", { class: "sv-panel-icon", text: "🙏" }));
       panel.appendChild(el("h3", { text: "Thanks for your honesty" + (firstName(c) ? ", " + firstName(c) : "") + "." }));
       panel.appendChild(el("p", { html: "Our dealer program requires a minimum of <strong>$20,000 in accessible capital</strong>, so a strategy session wouldn't be a good use of your time right now. When that changes, come back and apply again — we'd love to talk." }));
+    } else if (kind === "nofit") {
+      /* Turned away by another rule (an answer or the pre-qualification): one neutral message, no reason given. */
+      panel.appendChild(el("div", { class: "sv-panel-icon", text: "🙏" }));
+      panel.appendChild(el("h3", { text: "Thanks for applying" + (firstName(c) ? ", " + firstName(c) : "") + "." }));
+      panel.appendChild(el("p", { text: "We've reviewed your application and can't offer a strategy session right now. If your situation changes, come back and apply again — we'd love to talk." }));
     } else {
       panel.appendChild(el("div", { class: "sv-panel-icon", text: "✅" }));
       panel.appendChild(el("h3", { text: "Your application is in" + (firstName(c) ? ", " + firstName(c) : "") + "!" }));
