@@ -55,6 +55,37 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
 
 Logs mask names, phones and emails.
 
+## Soft credit check (SimpleCheck)
+
+A completed application whose capital answer starts with "Yes" gets one SimpleCheck Qualify pre-qualification
+(`worker/src/simplecheck.ts`, `POST https://api.simplecheck.ai/api/pre-qualification`, token in the JSON body).
+It runs in the background after the lead is stored (`creditFlow` in `worker/src/index.ts`), so capture, routing
+and booking never wait on it and never fail because of it.
+
+- **Consent gate:** the survey shows the disclosure under its submit button and sends
+  `credit_consent: "soft-pull-v1"` with the full submit. The flag counts only on `/lead` with an allowed `Origin`.
+  The version, time and IP are stored (`credit_consent`, `credit_consent_at`, `credit_consent_ip`). Change the
+  disclosure wording → bump the version in `assets/survey.js` and `CREDIT_CONSENT_VERSION` together.
+- **Not checked:** not-qualified leads, partials, submits without the flag, non-US IP countries, names that are
+  not a plain first + last name, and anything over the daily cap (`SIMPLECHECK_DAILY_CAP`, default 40 per 24 h).
+- **One check per person:** rows are reused by phone, so `credit_identity` (SHA-256 of name + email + phone)
+  records who was checked. A different person on the same row wipes the earlier consent and result; the same
+  person on a new row within 30 days reuses the earlier result instead of pulling again.
+- **Stored:** `credit_status` (`success` / `invalid` / `queued` / `skipped` / `error`), score, offer status and
+  amounts, debt-to-income, income, credit freeze, `credit_prequal_id`. The address / alternate-email enrichment
+  SimpleCheck returns is not read or stored. `error` and `skipped` release the row so a later submit can retry.
+- **Shown to the team:** GHL custom fields written by contact id (Credit Score, Credit Offer Status, Credit
+  Offer Amount, Debt To Income, Estimated Income, Credit Freeze) and a follow-up message in #lead-alerts. A
+  paused account, rejected token, rate limit or reached cap posts one notice per 6 hours.
+- **Config:** secret `SIMPLECHECK_API_TOKEN` (`npx wrangler secret put SIMPLECHECK_API_TOKEN`); unset = no checks.
+  `SIMPLECHECK_MODE = "off"` in `wrangler.toml` pauses them. SimpleCheck bills per successful report and returns
+  a cached result for the same person within 7 days; limit 100 requests/hour.
+- **Deploy order:** `npm run migrate` first, then `npm run deploy`. (A Worker deployed without the columns still
+  captures and routes leads; only the credit step fails, and logs it.)
+- **Local run:** `--var SIMPLECHECK_API_TOKEN:stub --var SIMPLECHECK_API_URL:http://127.0.0.1:<port>/api/pre-qualification`
+  against a stub (the override is honoured for localhost only), plus `--var "CORTANA_WEBHOOKS:{}"` so test leads
+  never reach the real step webhooks.
+
 ## Native booking step
 
 After a qualified submit the widget calls `GET /slots` on the Worker. When `GHL_PIT`, `GHL_LOCATION_ID`

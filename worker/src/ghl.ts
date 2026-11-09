@@ -109,27 +109,50 @@ export const SURVEY_FIELDS = [
   { key: "qualified", name: "Qualified" },
 ] as const;
 
-let fieldIdCache: { locationId: string; ids: Record<string, string> } | null = null;
+/** Written after a SimpleCheck soft credit check; created on first use like the survey fields. */
+export const CREDIT_FIELDS = [
+  { key: "score", name: "Credit Score" },
+  { key: "offer_status", name: "Credit Offer Status" },
+  { key: "offer_amount", name: "Credit Offer Amount" },
+  { key: "dti", name: "Debt To Income" },
+  { key: "income", name: "Estimated Income" },
+  { key: "credit_freeze", name: "Credit Freeze" },
+] as const;
+
+type FieldDef = { readonly key: string; readonly name: string };
+
+/** Field ids per sub-account and field group. */
+const fieldIdCache = new Map<string, Record<string, string>>();
 /** Single-flight: concurrent upserts share one lookup/creation pass so fields are never created twice. */
-let fieldLookup: Promise<Record<string, string>> | null = null;
+const fieldLookups = new Map<string, Promise<Record<string, string>>>();
 
 async function listCustomFields(cfg: ContactsConfig): Promise<Array<{ id: string; name: string }>> {
   const data = await ghl<{ customFields?: Array<{ id: string; name: string }> }>(cfg as GhlConfig, `/locations/${cfg.locationId}/customFields?model=contact`);
   return data.customFields ?? [];
 }
 
-/** Resolve (and if needed create) the survey custom fields; returns key → field id. */
-export async function ensureSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
-  if (fieldIdCache && fieldIdCache.locationId === cfg.locationId && Object.keys(fieldIdCache.ids).length === SURVEY_FIELDS.length) return fieldIdCache.ids;
-  if (fieldLookup) return fieldLookup;
-  fieldLookup = resolveSurveyFields(cfg).finally(() => { fieldLookup = null; });
-  return fieldLookup;
+/** Resolve (and if needed create) one group of custom fields; returns key → field id. */
+async function ensureFields(cfg: ContactsConfig, group: string, defs: readonly FieldDef[]): Promise<Record<string, string>> {
+  const cacheKey = `${cfg.locationId}:${group}`;
+  const cached = fieldIdCache.get(cacheKey);
+  if (cached && Object.keys(cached).length === defs.length) return cached;
+  const running = fieldLookups.get(cacheKey);
+  if (running) return running;
+  const lookup = resolveFields(cfg, defs)
+    .then((ids) => { fieldIdCache.set(cacheKey, ids); return ids; })
+    .finally(() => { fieldLookups.delete(cacheKey); });
+  fieldLookups.set(cacheKey, lookup);
+  return lookup;
 }
 
-async function resolveSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
+export function ensureSurveyFields(cfg: ContactsConfig): Promise<Record<string, string>> {
+  return ensureFields(cfg, "survey", SURVEY_FIELDS);
+}
+
+async function resolveFields(cfg: ContactsConfig, defs: readonly FieldDef[]): Promise<Record<string, string>> {
   const existing = await listCustomFields(cfg);
   const ids: Record<string, string> = {};
-  for (const f of SURVEY_FIELDS) {
+  for (const f of defs) {
     const found = existing.find((e) => e.name.trim().toLowerCase() === f.name.toLowerCase());
     if (found) { ids[f.key] = found.id; continue; }
     const created = await ghl<{ customField?: { id: string } }>(cfg as GhlConfig, `/locations/${cfg.locationId}/customFields`, {
@@ -138,9 +161,14 @@ async function resolveSurveyFields(cfg: ContactsConfig): Promise<Record<string, 
     });
     if (created.customField?.id) ids[f.key] = created.customField.id;
   }
-  fieldIdCache = { locationId: cfg.locationId, ids };
   return ids;
 }
+
+/** Soft credit check figures, already formatted for display. */
+export type ContactCredit = {
+  score?: string | null; offer_status?: string | null; offer_amount?: string | null;
+  dti?: string | null; income?: string | null; credit_freeze?: string | null;
+};
 
 export type SurveyContact = {
   name?: string | null; email?: string | null; phone?: string | null; city?: string | null; timezone?: string | null;
@@ -173,4 +201,19 @@ export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact)
   const id = data.contact?.id;
   if (!id) throw new Error("GHL upsert returned no contact id");
   return id;
+}
+
+/**
+ * Write the soft credit check figures onto an existing contact. Only the credit custom fields are sent
+ * (PUT by id), so tags, name and everything a workflow changed since the first sync stay untouched.
+ */
+export async function updateContactCredit(cfg: ContactsConfig, contactId: string, credit: ContactCredit): Promise<void> {
+  const ids = await ensureFields(cfg, "credit", CREDIT_FIELDS);
+  const customFields: Array<{ id: string; field_value: string }> = [];
+  for (const f of CREDIT_FIELDS) {
+    const value = credit[f.key];
+    if (ids[f.key] && value) customFields.push({ id: ids[f.key], field_value: value });
+  }
+  if (!customFields.length) return;
+  await ghl(cfg as GhlConfig, `/contacts/${encodeURIComponent(contactId)}`, { method: "PUT", body: JSON.stringify({ customFields }) });
 }

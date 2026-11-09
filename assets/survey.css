@@ -55,7 +55,8 @@
 .sv-cta:hover{background:var(--sv-dark);transform:translateY(-1px);box-shadow:0 8px 30px rgba(14,127,166,.3)}
 .sv-cta:focus-visible{outline:2px solid var(--sv-primary);outline-offset:2px}
 .sv-cta[disabled]{opacity:.6;cursor:default;transform:none}
-.sv-hint{margin:10px 0 0;text-align:center;font-size:12px;color:#94a3b8}
+.sv-hint{margin:10px 0 0;text-align:center;font-size:12px;line-height:1.45;color:#94a3b8}
+.sv-hint a{color:inherit;text-decoration:underline}
 
 /* honeypot + mirrors */
 .sv-hp{pointer-events:none;position:absolute;left:-10000px;height:0;width:0;overflow:hidden;opacity:0}

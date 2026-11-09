@@ -17,6 +17,8 @@
   var THANKYOU_URL = mount.getAttribute("data-thankyou") || "/thankyou-page/";
   var HONEYPOT_FIELD = "contact_fax";
   var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
+  /* Version of the soft credit check disclosure shown under the submit button; sent with a full submit only. */
+  var CREDIT_CONSENT = "soft-pull-v1";
 
   var STEPS = [
     { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
@@ -219,7 +221,7 @@
       refs.errors[s.key] = err;
       slide.appendChild(err);
       slide.appendChild(el("button", { type: "submit", class: "sv-cta", text: s.submit ? "Check My Eligibility" : "Continue" }));
-      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", text: "We'll only use this to confirm your strategy session." }));
+      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", html: 'By submitting, you agree to our <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a>, including a soft credit check to pre-qualify you. It won\'t affect your credit score.' }));
     }
     track.appendChild(slide);
   });
@@ -460,6 +462,7 @@
     if (PREVIEW) { fullSent = true; clearAbandonTimer(); startBooking(c); return; }
     setSubmitting(true);
     var body = payloadBase();
+    body.credit_consent = CREDIT_CONSENT;
     if (partialPhone && partialPhone !== c.phone) body.superseded_phone = partialPhone;
     fetch(API + "/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (res) {

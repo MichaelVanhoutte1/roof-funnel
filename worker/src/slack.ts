@@ -34,6 +34,40 @@ export function leadAlertMessage(l: AlertLead): Record<string, unknown> {
   };
 }
 
+/** Follow-up to the lead alert once the soft credit check has answered. */
+export type CreditAlert = {
+  id: number; name?: string | null; score: number | null; offerStatus: string | null; offerAmount: string | null;
+  dti: number | null; income: number | null; creditFreeze: string | null;
+};
+
+export function creditAlertMessage(c: CreditAlert): Record<string, unknown> {
+  const name = c.name?.trim() || "Unknown name";
+  const facts = [
+    c.score != null ? `*Score:* ${c.score}` : "*Score:* no credit file matched",
+    c.offerStatus ? `*Financing:* ${esc(c.offerStatus)}${c.offerAmount ? ` (${esc(c.offerAmount)})` : ""}` : null,
+    c.dti != null ? `*Debt-to-income:* ${c.dti}%` : null,
+    c.income != null ? `*Est. income:* $${Math.round(c.income).toLocaleString("en-US")}` : null,
+    c.creditFreeze && /^y/i.test(c.creditFreeze) ? "*Credit freeze:* Yes" : null,
+  ].filter((f): f is string => !!f).join("  ·  ");
+  return {
+    text: `Credit check: ${name}${c.score != null ? ` — ${c.score}` : ""}`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `💳 *Credit check: ${esc(name)}*\n${facts}` } },
+      { type: "context", elements: [{ type: "mrkdwn", text: `Soft pull, no score impact  ·  lead #${c.id}` }] },
+    ],
+  };
+}
+
+/** One-off notice that soft credit checks are not running (paused account, rejected token, cap reached). */
+export function creditProblemMessage(reason: string): Record<string, unknown> {
+  return {
+    text: `Credit checks are not running: ${reason}`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `⚠️ *Credit checks are not running*\n${esc(reason)}. Leads are still captured and booked as usual.` } },
+    ],
+  };
+}
+
 export async function postSlack(webhookUrl: string, body: Record<string, unknown>): Promise<void> {
   const res = await fetch(webhookUrl, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),
