@@ -15,7 +15,7 @@
   if (isLocal && override) API = override.replace(/\/+$/, ""); // local preview against a local Worker only
 
   var TOKEN_KEY = "rf_admin_key";
-  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, rules: null, questions: [], busy: false };
+  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, rules: null, questions: [], busy: false, open: {} };
 
   /* sessionStorage, not localStorage: the key is visible to this tab only, which loads no third-party script.
      (The public funnel pages on this domain load vendor scripts; those must never be able to read it.) */
@@ -115,47 +115,43 @@
       .then(function () { state.busy = false; if (getToken()) render(); });
   }
 
-  /* ---------------- overview ---------------- */
+  /* ---------------- overview (same layout as the CSP Lead Scoring page) ---------------- */
+  var SECTIONS = { capital: "Capital", timeline: "Urgency", business_owner: "Avatar", credit_score: "Credit", credit_offer: "Financing", result: "Funnel" };
+
+  function closeRate(r) { return r.showed > 0 ? r.won / r.showed : null; }
+  function scoreBadge(r) {
+    var composite = (r.showRate || 0) * 0.5 + (closeRate(r) || 0) * 0.3 + (r.bookRate || 0) * 0.2;
+    return composite >= 0.45 ? pill("Best", "good") : composite >= 0.25 ? pill("Avg", "warn") : pill("Weak");
+  }
   var COLUMNS = [
     ["Leads", function (r) { return num(r.leads); }],
-    ["Qualified", function (r) { return num(r.qualified); }, "Completed the survey and was sent to the calendar"],
-    ["Booked", function (r) { return num(r.booked); }, "Booked the setter call"],
-    ["Book %", function (r) { return pct(r.bookRate); }, "Booked ÷ leads", true],
-    ["Showed", function (r) { return num(r.showed); }, "Booked and had the setter conversation"],
-    ["No-show", function (r) { return num(r.noShow); }],
-    ["Show %", function (r) { return pct(r.showRate); }, "Showed ÷ (showed + no-show)", true],
-    ["Setter DQ", function (r) { return num(r.setterDq); }, "Turned away by the setter"],
-    ["To closer", function (r) { return num(r.toCloser); }, "Passed on to a closer call"],
-    ["Closer show", function (r) { return num(r.closerShowed); }, "Showed up to the closer call"],
-    ["Closer %", function (r) { return pct(r.closerShowRate); }, "Closer showed ÷ (closer showed + closer no-show)", true],
-    ["Won", function (r) { return num(r.won); }],
-    ["Close %", function (r) { return pct(r.closeRate); }, "Won ÷ closer showed", true],
-    ["Cash", function (r) { return money(r.cash); }, "Opportunity value of won deals"],
-    ["$ / booked", function (r) { return money(r.cashPerBooked); }, "Cash ÷ booked"],
+    ["Booked", function (r) { return num(r.booked); }],
+    ["Book %", function (r) { return pct(r.bookRate); }, "muted"],
+    ["Showed", function (r) { return num(r.showed); }],
+    ["Show %", function (r) { return pct(r.showRate); }],
+    ["Closed", function (r) { return num(r.won); }],
+    ["Close %", function (r) { return pct(closeRate(r)); }],
+    ["$ / booked", function (r) { return money(r.cashPerBooked); }],
   ];
 
-  function segmentTable(title, rows) {
-    var head = el("tr", null, [el("th", { text: title })].concat(COLUMNS.map(function (c) { return el("th", { text: c[0], title: c[2] }); })));
+  function segmentSection(key, question, rows) {
+    var head = el("tr", null, [el("th", { text: "Segment" })].concat(COLUMNS.map(function (c) { return el("th", { text: c[0] }); })).concat([el("th", { text: "Score" })]));
     var body = rows.map(function (r) {
-      return el("tr", null, [el("td", { text: r.label })].concat(COLUMNS.map(function (c) { return el("td", { class: c[3] ? "rate" : null, text: c[1](r) }); })));
+      return el("tr", null, [el("td", { class: "segment", text: r.label })]
+        .concat(COLUMNS.map(function (c) { return el("td", { class: c[2] || null, text: c[1](r) }); }))
+        .concat([el("td", null, [scoreBadge(r)])]));
     });
-    return el("div", { class: "card" }, [el("div", { class: "scroll" }, [el("table", null, [el("thead", null, [head]), el("tbody", null, body)])])]);
+    var details = el("details", { class: "acc" }, [
+      el("summary", null, [el("div", null, [el("p", { class: "acc-tag", text: SECTIONS[key] }), el("p", { class: "acc-q", text: question })])]),
+      el("div", { class: "scroll" }, [el("table", { class: "seg" }, [el("thead", null, [head]), el("tbody", null, body)])]),
+    ]);
+    details.open = !!state.open[key];
+    details.addEventListener("toggle", function () { state.open[key] = details.open; });
+    return details;
   }
 
   function stat(label, value, sub) {
     return el("div", { class: "stat" }, [el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "sub", text: sub || "" })]);
-  }
-
-  function syncLine(data) {
-    var c = data.connections || {}, s = data.sync;
-    var parts = [
-      "GHL " + (c.ghl ? "connected" : "not connected"),
-      "credit checks " + (c.simplecheck ? "on" : "off"),
-      "closer attendance: " + (c.googleMeet ? "Google Meet" : c.fathom ? "Fathom" : "pipeline stage only (no Fathom or Google Meet key yet)"),
-      "last sync " + (s && s.at ? dayTime(s.at) : "never"),
-    ];
-    if (s && s.setterCalls && s.setterCalls.remaining) parts.push(s.setterCalls.remaining + " call logs still to fetch");
-    return parts.join(" · ");
   }
 
   function syncErrors(s) {
@@ -167,30 +163,18 @@
     var data = state.report; if (!data) return;
     var r = data.report, t = r.totals;
     box.appendChild(el("div", { class: "cards" }, [
-      stat("Total leads", num(t.leads), num(t.booked) + " booked a call"),
-      stat("Book rate", pct(t.bookRate), num(t.qualified) + " sent to the calendar"),
-      stat("Show rate (setter)", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show"),
-      stat("Show rate (closer)", pct(t.closerShowRate), num(t.toCloser) + " passed to a closer"),
-      stat("Close rate", pct(t.closeRate), num(t.won) + " won"),
-      stat("$ / booked call", money(t.cashPerBooked), money(t.cash) + " cash"),
+      stat("Total Leads", num(t.leads), num(t.booked) + " booked an appt"),
+      stat("Book Rate", pct(t.bookRate), "leads → booked"),
+      stat("Show Rate", pct(t.showRate), "booked → showed"),
+      stat("Close Rate", pct(closeRate(t)), "showed → closed"),
+      stat("$ / Booked Call", money(t.cashPerBooked), money(t.cash) + " cash"),
     ]));
     if (r.unknownStages && r.unknownStages.length) {
       box.appendChild(el("div", { class: "notice warn", text: "These GHL pipeline stages are not recognised and count as no outcome: " + r.unknownStages.join(", ") + ". Tell Claude if a stage was renamed or added." }));
     }
     var errs = syncErrors(data.sync);
     if (errs.length) box.appendChild(el("div", { class: "notice bad", text: "The last sync had a problem. " + errs.join(" · ") }));
-    r.segments.forEach(function (s) { box.appendChild(segmentTable(s.title, s.rows)); });
-    box.appendChild(el("div", { class: "card" }, [
-      el("h2", { text: "How this is counted" }),
-      el("div", { class: "legend" }, [
-        el("p", { text: "Leads: everyone who gave a phone number in the selected dates, including people who did not finish the survey." }),
-        el("p", { text: "Setter show: the setter call is a phone call. A completed call of " + Math.round(r.showMinCallSeconds / 60) + " minutes or more in GHL counts as showed, and so does a lead the team moved past the setter in the pipeline." }),
-        el("p", { text: "Setter no-show: the booked time has passed, there was no conversation, and the setter either tried calling or marked the lead as a no-show." }),
-        el("p", { text: "Setter DQ, To closer, Won and Cash come from the lead's stage and value in the GHL Sales Pipeline." }),
-        el("p", { text: "Closer show: Google Meet or Fathom attendance when connected; until then the pipeline stage (Closer Followup / Won = showed, Closer Booked Noshow = no-show)." }),
-        el("p", { text: syncLine(data) }),
-      ]),
-    ]));
+    r.segments.forEach(function (s) { if (SECTIONS[s.key]) box.appendChild(segmentSection(s.key, s.title, s.rows)); });
   }
 
   /* ---------------- leads ---------------- */
