@@ -49,6 +49,9 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
 - Secrets (`npx wrangler secret put`): `GHL_WEBHOOK_URL` (LeadConnector inbound-webhook workflow URL;
   until set, rows get `ghl_status=skipped`), `ADMIN_TOKEN`. Optional vars:
   `FAKE_LEAD_TEST_PHONE_PREFIXES`, `FAKE_LEAD_INTERNAL_EMAIL_DOMAINS`.
+- Laptop copies of the secrets live in Doppler project `roofreju-csp` (config `dev`; `doppler.yaml` in the repo root,
+  `doppler setup --no-interactive` once per clone). The Worker itself reads `wrangler secret put` values, not Doppler;
+  Doppler is for scripts and previews run from the laptop (`doppler run -- ...`). Never print values (`doppler secrets --only-names`).
 - Dev: `cd worker && npm install && npm test && npm run typecheck`; `npx wrangler dev --local --port 8787`
   (add `--var "ALLOWED_COUNTRIES:US,CA,<your country>"` when testing from outside US/CA, the geo gate
   silently drops everything else); deploy with `npm run deploy`, migrations with `npm run migrate`.
