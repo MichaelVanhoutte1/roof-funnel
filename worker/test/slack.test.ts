@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { creditAlertMessage } from "../src/slack.ts";
+import { creditAlertMessage, creditProblemMessage } from "../src/slack.ts";
 
 test("creditAlertMessage lists the figures the closer needs", () => {
   const m = creditAlertMessage({ id: 42, name: "Jane <Doe>", score: 733, offerStatus: "Approved", offerAmount: "$25,000 / $72,000", dti: 16, income: 60000, creditFreeze: "No" });
@@ -21,4 +21,10 @@ test("creditAlertMessage says so when no credit file matched, and flags a freeze
   assert.equal(m.text, "Credit check: Unknown name");
   assert.match(s, /no credit file matched/);
   assert.match(s, /\*Credit freeze:\* Yes/);
+});
+
+test("creditProblemMessage says checks stopped and leads still flow", () => {
+  const m = creditProblemMessage("SimpleCheck rejected the API token");
+  assert.equal(m.text, "Credit checks are not running: SimpleCheck rejected the API token");
+  assert.match(JSON.stringify(m), /Leads are still captured and booked as usual/);
 });

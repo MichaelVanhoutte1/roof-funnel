@@ -25,9 +25,9 @@ import {
   type LeadInput,
 } from "./validation.ts";
 import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
-import { creditAlertMessage, leadAlertMessage, postSlack } from "./slack.ts";
-import { offerAmounts, runPreQualification, type CreditResult } from "./simplecheck.ts";
-import { createAppointment, freeSlots, slotDurationMinutes, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
+import { creditAlertMessage, creditProblemMessage, leadAlertMessage, postSlack } from "./slack.ts";
+import { identityKey, offerAmounts, runPreQualification, type CreditResult } from "./simplecheck.ts";
+import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
@@ -57,7 +57,9 @@ export interface Env {
   SIMPLECHECK_API_TOKEN?: string;
   /** "off" pauses soft credit checks without removing the token. */
   SIMPLECHECK_MODE?: string;
-  /** Local runs only: point the check at a stub instead of api.simplecheck.ai. Never set in production. */
+  /** Most soft credit checks allowed in any 24 hours (default 40). A guard against a flood of fake applications. */
+  SIMPLECHECK_DAILY_CAP?: string;
+  /** Local runs only: point the check at a stub on localhost. Any other host is ignored. */
   SIMPLECHECK_API_URL?: string;
 }
 
@@ -422,12 +424,15 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   // Qualified = Yes on capital + at least an email; fired once per lead, preferably now that the phone is here.
   if (qualifiedAnswer) ctx.waitUntil(slackAlertOnce(env, row, partial, tracking));
   if (qualifiedAnswer && (row.email || row.phone)) ctx.waitUntil(sendQualifiedOnce(env, row.id, eventPayload("qualified", { ...leadFields, qualified: true }, tracking, country)));
-  // Soft credit check: completed + qualified + submitted under the disclosure. Routing does not wait for it.
-  if (!partial && str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION) {
-    await env.DB.prepare(
-      "UPDATE leads SET credit_consent = ?1, credit_consent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?2",
-    ).bind(CREDIT_CONSENT_VERSION, row.id).run();
-    if (qualifiedAnswer) ctx.waitUntil(creditCheckOnce(env, row, meta, timezone, contactSynced));
+  // Soft credit check on a completed application; background only, so capture and routing never wait on it.
+  // The consent flag counts only from our own pages: a request without an allowed Origin never triggers a check.
+  if (!partial) {
+    const origin = request.headers.get("Origin");
+    ctx.waitUntil(creditFlow(env, row, meta, {
+      consent: str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin),
+      qualified: qualifiedAnswer,
+      contactSynced,
+    }));
   }
 
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
@@ -465,11 +470,11 @@ function contactsConfig(env: Env): ContactsConfig | null {
   return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID };
 }
 
-/** Lead row → GHL contact; records the outcome on the row. */
-async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined): Promise<void> {
+/** Lead row → GHL contact; records the outcome on the row. Resolves to the contact id, or null. Never rejects. */
+async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefined): Promise<string | null> {
   const cfg = contactsConfig(env);
-  if (!cfg) return;
-  if (syncMode(env) === "qualified" && !/^Yes/.test(row.capital ?? "")) return; // only qualified leads go to GHL
+  if (!cfg) return null;
+  if (syncMode(env) === "qualified" && !/^Yes/.test(row.capital ?? "")) return null; // only qualified leads go to GHL
   try {
     const id = await upsertSurveyContact(cfg, {
       name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
@@ -478,8 +483,10 @@ async function syncLeadContact(env: Env, row: LeadRow, timezone: string | undefi
     });
     await env.DB.prepare("UPDATE leads SET ghl_contact_id = ?1 WHERE id = ?2").bind(id, row.id).run();
     console.log("[contact] lead", row.id, "→ GHL contact", id);
+    return id;
   } catch (err) {
     console.error("[contact] lead", row.id, "GHL upsert failed:", String(err).slice(0, 300));
+    return null;
   }
 }
 
@@ -584,81 +591,203 @@ async function relayEvent(env: Env, event: string, payload: Record<string, unkno
 
 /* ---------------- soft credit check (SimpleCheck) ---------------- */
 
+const SQL_NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+const CREDIT_RESULT_COLUMNS = [
+  "credit_prequal_id", "credit_score", "credit_offer_status", "credit_offer_amount_1", "credit_offer_amount_2",
+  "credit_dti", "credit_income", "credit_household_income", "credit_freeze",
+] as const;
+
 function creditCheckEnabled(env: Env): boolean {
   return !!env.SIMPLECHECK_API_TOKEN && (env.SIMPLECHECK_MODE ?? "on").toLowerCase() !== "off";
 }
 
-/** One SimpleCheck pre-qualification per lead; the result lands on the row, the GHL contact and Slack. */
-async function creditCheckOnce(
-  env: Env, row: LeadRow, meta: Meta, timezone: string | undefined, contactSynced: Promise<void>,
-): Promise<void> {
-  if (!creditCheckEnabled(env)) return;
-  const claim = await env.DB.prepare(
-    "UPDATE leads SET credit_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), credit_status = 'pending', credit_error = NULL WHERE id = ?1 AND credit_checked_at IS NULL",
-  ).bind(row.id).run();
-  if ((claim.meta.changes ?? 0) === 0) return; // already checked (or in flight) for this lead
+function creditDailyCap(env: Env): number {
+  const n = Number(env.SIMPLECHECK_DAILY_CAP ?? "");
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 40;
+}
 
-  // SimpleCheck covers US consumers only; the consent IP is the address the application came from.
-  const result: CreditResult = meta.country && meta.country !== "US"
-    ? { status: "skipped", error: "non_us" }
-    : await runPreQualification(
-        env.SIMPLECHECK_API_TOKEN!, { name: row.name, email: row.email, phone: row.phone, consentIp: meta.ip },
-        fetch, env.SIMPLECHECK_API_URL || undefined,
-      );
-
-  if (result.status !== "success") {
-    // Nothing was pulled for 'error' (transport) and 'skipped' (e.g. one-word name): release the claim so a
-    // later save of this lead (a resubmit with a full name) can still be checked.
-    await env.DB.prepare(
-      "UPDATE leads SET credit_status = ?1, credit_error = ?2, credit_checked_at = CASE WHEN ?1 IN ('error', 'skipped') THEN NULL ELSE credit_checked_at END WHERE id = ?3",
-    ).bind(result.status, result.error, row.id).run();
-    console.log("[credit] lead", row.id, result.status, result.error);
-    return;
+/** The stub override is honoured for localhost only, so the token can never be sent to another host. */
+function creditEndpoint(env: Env): string | undefined {
+  if (!env.SIMPLECHECK_API_URL) return undefined;
+  try {
+    const u = new URL(env.SIMPLECHECK_API_URL);
+    return u.hostname === "127.0.0.1" || u.hostname === "localhost" ? u.toString() : undefined;
+  } catch {
+    return undefined;
   }
+}
 
-  await env.DB.prepare(
-    `UPDATE leads SET credit_status = 'success', credit_error = NULL, credit_prequal_id = ?1, credit_score = ?2,
-       credit_offer_status = ?3, credit_offer_amount_1 = ?4, credit_offer_amount_2 = ?5, credit_dti = ?6,
-       credit_income = ?7, credit_household_income = ?8, credit_freeze = ?9 WHERE id = ?10`,
-  ).bind(
-    result.prequalId, result.score, result.offerStatus, result.offerAmount1, result.offerAmount2, result.dti,
-    result.income, result.householdIncome, result.creditFreeze, row.id,
-  ).run();
-  console.log("[credit] lead", row.id, "checked", result.score == null ? "(no score returned)" : "(score stored)");
+type CreditOpts = { consent: boolean; qualified: boolean; contactSynced: Promise<string | null> };
 
-  const amount = offerAmounts(result);
-  if (env.SLACK_LEAD_ALERTS_WEBHOOK) {
-    try {
-      await postSlack(env.SLACK_LEAD_ALERTS_WEBHOOK, creditAlertMessage({
-        id: row.id, name: row.name, score: result.score, offerStatus: result.offerStatus, offerAmount: amount,
-        dti: result.dti, income: result.income, creditFreeze: result.creditFreeze,
-      }));
-    } catch (err) {
-      console.error("[credit] slack failed for lead", row.id, String(err).slice(0, 200));
+/** Background step after every completed application. Never throws: capture, routing and booking do not depend on it. */
+async function creditFlow(env: Env, row: LeadRow, meta: Meta, opts: CreditOpts): Promise<void> {
+  try {
+    const identity = await identityKey(row.name, row.email, row.phone);
+    // Rows are found by phone. If this row now carries someone else (or corrected details), the earlier
+    // consent and result do not carry over to them.
+    await env.DB.prepare(
+      `UPDATE leads SET credit_consent = NULL, credit_consent_at = NULL, credit_consent_ip = NULL, credit_identity = NULL,
+         credit_status = NULL, credit_checked_at = NULL, credit_error = NULL,
+         ${CREDIT_RESULT_COLUMNS.map((c) => `${c} = NULL`).join(", ")}
+       WHERE id = ?1 AND credit_identity IS NOT NULL AND credit_identity <> ?2`,
+    ).bind(row.id, identity).run();
+    if (!opts.consent) return;
+    // Consent evidence is written only while no check is recorded, so it always describes the check that used it.
+    await env.DB.prepare(
+      `UPDATE leads SET credit_consent = ?1, credit_consent_at = ${SQL_NOW}, credit_consent_ip = ?2, credit_identity = ?3
+       WHERE id = ?4 AND credit_checked_at IS NULL`,
+    ).bind(CREDIT_CONSENT_VERSION, meta.ip, identity, row.id).run();
+    if (!opts.qualified || !creditCheckEnabled(env)) return;
+    await creditCheckOnce(env, row, meta, identity, opts.contactSynced);
+  } catch (err) {
+    console.error("[credit] flow failed for lead", row.id, String(err).slice(0, 200));
+  }
+}
+
+type CreditColumns = {
+  credit_prequal_id: number | null; credit_score: number | null; credit_offer_status: string | null;
+  credit_offer_amount_1: string | null; credit_offer_amount_2: string | null; credit_dti: number | null;
+  credit_income: number | null; credit_household_income: number | null; credit_freeze: string | null;
+};
+
+/** The same person checked on another row in the last 30 days (a returning applicant): reuse it, do not pull again. */
+async function recentResultFor(env: Env, identity: string, exceptId: number): Promise<CreditResult | null> {
+  const r = await env.DB.prepare(
+    `SELECT ${CREDIT_RESULT_COLUMNS.join(", ")} FROM leads
+     WHERE credit_identity = ?1 AND credit_status = 'success' AND id <> ?2
+       AND credit_checked_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days')
+     ORDER BY id DESC LIMIT 1`,
+  ).bind(identity, exceptId).first<CreditColumns>();
+  if (!r) return null;
+  return {
+    status: "success", prequalId: r.credit_prequal_id, score: r.credit_score, offerStatus: r.credit_offer_status,
+    offerAmount1: r.credit_offer_amount_1, offerAmount2: r.credit_offer_amount_2, dti: r.credit_dti,
+    income: r.credit_income, householdIncome: r.credit_household_income, creditFreeze: r.credit_freeze,
+  };
+}
+
+async function overDailyCap(env: Env, exceptId: number): Promise<boolean> {
+  const r = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM leads WHERE id <> ?1 AND credit_status IN ('success', 'invalid', 'queued', 'pending')
+       AND credit_checked_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')`,
+  ).bind(exceptId).first<{ n: number }>();
+  return (r?.n ?? 0) >= creditDailyCap(env);
+}
+
+/** A reason worth telling the team about (checks are not running at all), or null for a one-lead outcome. */
+function creditProblem(env: Env, result: CreditResult): string | null {
+  if (result.status === "queued") return "The SimpleCheck account is paused, so requests are being queued";
+  if (result.status === "skipped" && result.error === "daily_cap") return `The daily limit of ${creditDailyCap(env)} checks was reached`;
+  if (result.status !== "error") return null;
+  if (result.http === 401) return "SimpleCheck rejected the API token";
+  if (result.http === 429) return "The SimpleCheck rate limit (100 per hour) was reached";
+  if (result.http === 400 || result.http === 403) return "SimpleCheck reports a billing or account problem";
+  return null;
+}
+
+/** At most one notice per reason every 6 hours. */
+async function notifyCreditProblemOnce(env: Env, rowId: number, key: string, reason: string): Promise<void> {
+  if (!env.SLACK_LEAD_ALERTS_WEBHOOK) return;
+  try {
+    const seen = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM leads WHERE id <> ?1 AND credit_error = ?2 AND updated_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 hours')",
+    ).bind(rowId, key).first<{ n: number }>();
+    if ((seen?.n ?? 0) > 0) return;
+    await postSlack(env.SLACK_LEAD_ALERTS_WEBHOOK, creditProblemMessage(reason));
+  } catch (err) {
+    console.error("[credit] problem notice failed:", String(err).slice(0, 120));
+  }
+}
+
+/** One SimpleCheck pre-qualification per lead row; the result lands on the row, the GHL contact and Slack. */
+async function creditCheckOnce(
+  env: Env, row: LeadRow, meta: Meta, identity: string, contactSynced: Promise<string | null>,
+): Promise<void> {
+  const claim = await env.DB.prepare(
+    `UPDATE leads SET credit_checked_at = ${SQL_NOW}, credit_status = 'pending', credit_error = NULL
+     WHERE id = ?1 AND credit_checked_at IS NULL AND credit_consent = ?2 AND credit_identity = ?3`,
+  ).bind(row.id, CREDIT_CONSENT_VERSION, identity).run();
+  if ((claim.meta.changes ?? 0) === 0) return; // already checked (or in flight) for this person on this row
+
+  let result: CreditResult;
+  if (meta.country && meta.country !== "US") {
+    result = { status: "skipped", error: "non_us" }; // SimpleCheck covers US consumers only
+  } else {
+    const reused = await recentResultFor(env, identity, row.id);
+    if (reused) result = reused;
+    else if (await overDailyCap(env, row.id)) result = { status: "skipped", error: "daily_cap" };
+    else {
+      result = await runPreQualification(
+        env.SIMPLECHECK_API_TOKEN!, { name: row.name, email: row.email, phone: row.phone, consentIp: meta.ip },
+        fetch, creditEndpoint(env),
+      );
     }
   }
 
-  // After the first contact sync, so the two upserts never race to create the same contact.
-  await contactSynced.catch(() => {});
-  const cfg = contactsConfig(env);
-  if (!cfg) return;
-  try {
-    await upsertSurveyContact(cfg, {
-      name: row.name, email: row.email, phone: row.phone, city: row.city, timezone,
-      timeline: row.timeline, business_owner: row.business_owner, capital: row.capital,
-      qualified: row.capital ? /^Yes/.test(row.capital) : null,
-      credit: {
-        score: result.score == null ? "No credit file matched" : String(result.score),
-        offer_status: result.offerStatus,
-        offer_amount: amount,
-        dti: result.dti == null ? null : `${result.dti}%`,
-        income: result.income == null ? null : `$${Math.round(result.income).toLocaleString("en-US")}`,
-        credit_freeze: result.creditFreeze,
-      },
-    });
-  } catch (err) {
-    console.error("[credit] GHL update failed for lead", row.id, String(err).slice(0, 300));
+  if (result.status !== "success") {
+    // 'error' and 'skipped' release the claim so a later submit of this lead can still be checked;
+    // 'invalid' and 'queued' keep it (the same input would fail again / the request is already with SimpleCheck).
+    await env.DB.prepare(
+      "UPDATE leads SET credit_status = ?1, credit_error = ?2, credit_checked_at = CASE WHEN ?1 IN ('error', 'skipped') THEN NULL ELSE credit_checked_at END WHERE id = ?3",
+    ).bind(result.status, result.error, row.id).run();
+    console.log("[credit] lead", row.id, result.status); // the reason is on the row, not in the log
+    const problem = creditProblem(env, result);
+    if (problem) await notifyCreditProblemOnce(env, row.id, result.error, problem);
+    return;
   }
+
+  try {
+    await env.DB.prepare(
+      `UPDATE leads SET credit_status = 'success', credit_error = NULL, credit_prequal_id = ?1, credit_score = ?2,
+         credit_offer_status = ?3, credit_offer_amount_1 = ?4, credit_offer_amount_2 = ?5, credit_dti = ?6,
+         credit_income = ?7, credit_household_income = ?8, credit_freeze = ?9 WHERE id = ?10`,
+    ).bind(
+      result.prequalId, result.score, result.offerStatus, result.offerAmount1, result.offerAmount2, result.dti,
+      result.income, result.householdIncome, result.creditFreeze, row.id,
+    ).run();
+    console.log("[credit] lead", row.id, "checked");
+  } catch (err) {
+    // The result is still sent to Slack and GHL below, so a paid report is not lost with the write.
+    console.error("[credit] lead", row.id, "result not stored:", String(err).slice(0, 120));
+  }
+
+  const amount = offerAmounts(result);
+  const report = result;
+  const toSlack = async (): Promise<void> => {
+    if (!env.SLACK_LEAD_ALERTS_WEBHOOK) return;
+    try {
+      await postSlack(env.SLACK_LEAD_ALERTS_WEBHOOK, creditAlertMessage({
+        id: row.id, name: row.name, score: report.score, offerStatus: report.offerStatus, offerAmount: amount,
+        dti: report.dti, income: report.income, creditFreeze: report.creditFreeze,
+      }));
+    } catch (err) {
+      console.error("[credit] slack failed for lead", row.id, String(err).slice(0, 120));
+    }
+  };
+  const toGhl = async (): Promise<void> => {
+    const cfg = contactsConfig(env);
+    if (!cfg) return;
+    try {
+      // After the first contact sync, and by contact id, so nothing but the credit fields is touched.
+      let contactId = await contactSynced.catch(() => null);
+      if (!contactId) {
+        const saved = await env.DB.prepare("SELECT ghl_contact_id FROM leads WHERE id = ?1").bind(row.id).first<{ ghl_contact_id: string | null }>();
+        contactId = saved?.ghl_contact_id ?? null;
+      }
+      if (!contactId) { console.log("[credit] lead", row.id, "has no GHL contact; credit fields not written"); return; }
+      await updateContactCredit(cfg, contactId, {
+        score: report.score == null ? "No credit file matched" : String(report.score),
+        offer_status: report.offerStatus,
+        offer_amount: amount,
+        dti: report.dti == null ? null : `${report.dti}%`,
+        income: report.income == null ? null : `$${Math.round(report.income).toLocaleString("en-US")}`,
+        credit_freeze: report.creditFreeze,
+      });
+    } catch (err) {
+      console.error("[credit] GHL update failed for lead", row.id, String(err).slice(0, 80));
+    }
+  };
+  await Promise.allSettled([toSlack(), toGhl()]);
 }
 
 /** One #lead-alerts message per qualified lead (Yes on capital), the moment a phone is stored. */

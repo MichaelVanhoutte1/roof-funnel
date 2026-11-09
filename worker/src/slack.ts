@@ -58,6 +58,16 @@ export function creditAlertMessage(c: CreditAlert): Record<string, unknown> {
   };
 }
 
+/** One-off notice that soft credit checks are not running (paused account, rejected token, cap reached). */
+export function creditProblemMessage(reason: string): Record<string, unknown> {
+  return {
+    text: `Credit checks are not running: ${reason}`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `⚠️ *Credit checks are not running*\n${esc(reason)}. Leads are still captured and booked as usual.` } },
+    ],
+  };
+}
+
 export async function postSlack(webhookUrl: string, body: Record<string, unknown>): Promise<void> {
   const res = await fetch(webhookUrl, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),

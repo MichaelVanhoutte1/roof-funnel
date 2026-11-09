@@ -1,19 +1,37 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRequest, offerAmounts, parseResponse, runPreQualification, splitName } from "../src/simplecheck.ts";
+import { buildRequest, identityKey, offerAmounts, parseResponse, runPreQualification, splitName } from "../src/simplecheck.ts";
 
 const input = { name: "Jane Doe", email: "jane.doe@sample-roofing.com", phone: "+18135550142", consentIp: "203.0.113.42" };
 
 test("splitName needs a first and a last name and keeps only letters, spaces, apostrophes, hyphens", () => {
   assert.deepEqual(splitName("Jane Doe"), { firstName: "Jane", lastName: "Doe" });
-  assert.deepEqual(splitName("  María José O'Neil-Smith Jr. "), { firstName: "Maria", lastName: "Jose O'Neil-Smith Jr" });
-  assert.deepEqual(splitName("Doe, Jane"), { firstName: "Doe", lastName: "Jane" });
-  assert.equal(splitName("Jane D0e 3rd"), null);
-  assert.equal(splitName("Jane & John Doe"), null);
+  assert.deepEqual(splitName("  María José O'Neil-Smith Jr. "), { firstName: "Maria", lastName: "Jose O'Neil-Smith" });
+  assert.deepEqual(splitName("Mary Ann De La Cruz"), { firstName: "Mary", lastName: "Ann De La Cruz" });
   assert.equal(splitName("Jane"), null);
   assert.equal(splitName("Jane 42"), null);
+  assert.equal(splitName("Jane D0e 3rd"), null);
+  assert.equal(splitName("Jane & John Doe"), null);
   assert.equal(splitName(""), null);
   assert.equal(splitName(null), null);
+});
+
+test("splitName turns 'Last, First' around and drops titles, suffixes and middle initials", () => {
+  assert.deepEqual(splitName("Doe, Jane"), { firstName: "Jane", lastName: "Doe" });
+  assert.deepEqual(splitName("John Smith, Jr."), { firstName: "John", lastName: "Smith" });
+  assert.deepEqual(splitName("Dr. John M. Smith III"), { firstName: "John", lastName: "Smith" });
+  assert.deepEqual(splitName("John M Smith"), { firstName: "John", lastName: "Smith" });
+  assert.equal(splitName("Dr. Smith"), null);
+  assert.equal(splitName("Smith Jr"), null);
+});
+
+test("identityKey is stable across formatting and differs per person", async () => {
+  const a = await identityKey("Jane Doe", "Jane.Doe@Sample-Roofing.com", "+1 (813) 555-0142");
+  assert.match(a, /^[0-9a-f]{64}$/);
+  assert.equal(await identityKey("  jane   DOE ", "jane.doe@sample-roofing.com", "8135550142"), a);
+  assert.notEqual(await identityKey("John Doe", "jane.doe@sample-roofing.com", "8135550142"), a);
+  assert.notEqual(await identityKey("Jane Doe", "other@sample-roofing.com", "8135550142"), a);
+  assert.notEqual(await identityKey("Jane Doe", "jane.doe@sample-roofing.com", "8135550143"), a);
 });
 
 test("buildRequest sends the token in the body with the nested shape from the reference", () => {
@@ -77,16 +95,23 @@ test("parseResponse: HTTP 200 with Code 201 is a validation failure, not a succe
   assert.deepEqual(parseResponse(200, { Code: "201", Status: "Failure", Errors: ["Email is not in a valid format.", "Last name is required."] }), {
     status: "invalid", error: "Email is not in a valid format. Last name is required.",
   });
-  assert.equal(parseResponse(200, null).status, "invalid");
+  assert.equal(parseResponse(200, { Code: "201" }).status, "invalid");
 });
 
-test("parseResponse: queued, auth and server errors", () => {
+test("parseResponse: a 200 that is neither success nor a validation failure stays retryable", () => {
+  assert.deepEqual(parseResponse(200, null), { status: "error", http: 200, error: "unexpected response" });
+  assert.deepEqual(parseResponse(200, "<html>maintenance</html>"), { status: "error", http: 200, error: "unexpected response" });
+  assert.deepEqual(parseResponse(200, {}), { status: "error", http: 200, error: "unexpected response" });
+  assert.equal(parseResponse(200, { Code: "200", Status: "Failure", Errors: ["x"] }).status, "invalid");
+});
+
+test("parseResponse: queued, auth and server errors carry no vendor text", () => {
   assert.deepEqual(parseResponse(202, { message: "API is stopped; request queued", queued: true, queue_id: 9 }), {
-    status: "queued", error: "API is stopped; request queued",
+    status: "queued", error: "account paused, request queued",
   });
-  assert.deepEqual(parseResponse(401, { error: "Invalid API token" }), { status: "error", error: "HTTP 401: Invalid API token" });
-  assert.deepEqual(parseResponse(500, null), { status: "error", error: "HTTP 500: no detail" });
-  assert.equal(parseResponse(429, {}).status, "error");
+  assert.deepEqual(parseResponse(401, { error: "Invalid API token" }), { status: "error", http: 401, error: "HTTP 401" });
+  assert.deepEqual(parseResponse(500, null), { status: "error", http: 500, error: "HTTP 500" });
+  assert.deepEqual(parseResponse(429, {}), { status: "error", http: 429, error: "HTTP 429" });
 });
 
 test("runPreQualification posts JSON to the Qualify endpoint and never puts the token in the URL", async () => {
@@ -110,8 +135,15 @@ test("runPreQualification makes no request when the input cannot be checked, and
   assert.deepEqual(await runPreQualification("t", { ...input, name: "Jane" }, never), { status: "skipped", error: "name_not_checkable" });
   assert.equal(called, 0);
   const boom = (async () => { throw new Error("network down"); }) as unknown as typeof fetch;
-  const r = await runPreQualification("t", input, boom);
-  assert.equal(r.status, "error");
+  assert.deepEqual(await runPreQualification("t", input, boom), { status: "error", error: "network error" });
+  const slow = (async () => { throw new DOMException("timed out", "TimeoutError"); }) as unknown as typeof fetch;
+  assert.deepEqual(await runPreQualification("t", input, slow), { status: "error", error: "timeout" });
+});
+
+test("runPreQualification never returns the token inside an error text", async () => {
+  const echo = (async () => new Response(JSON.stringify({ Code: "201", Status: "Failure", Errors: ["bad token tok_secret given"] }), { status: 200 })) as unknown as typeof fetch;
+  const r = await runPreQualification("tok_secret", input, echo);
+  assert.deepEqual(r, { status: "invalid", error: "bad token <token> given" });
 });
 
 test("offerAmounts joins distinct amounts", () => {

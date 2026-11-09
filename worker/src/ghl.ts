@@ -173,8 +173,6 @@ export type ContactCredit = {
 export type SurveyContact = {
   name?: string | null; email?: string | null; phone?: string | null; city?: string | null; timezone?: string | null;
   timeline?: string | null; business_owner?: string | null; capital?: string | null; qualified?: boolean | null;
-  /** Present only after a soft credit check; adds the credit custom fields and the credit-checked tag. */
-  credit?: ContactCredit | null;
 };
 
 /** Create or update the contact (GHL matches on email or phone) with the survey answers as custom fields. */
@@ -186,20 +184,7 @@ export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact)
   const put = (key: string, value: string | null | undefined) => { if (ids[key] && value) customFields.push({ id: ids[key], field_value: value }); };
   put("timeline", c.timeline); put("business_owner", c.business_owner); put("capital", c.capital); put("city", c.city);
   if (c.qualified != null) put("qualified", c.qualified ? "Yes" : "No");
-  if (c.credit) {
-    let creditIds: Record<string, string> = {};
-    try { creditIds = await ensureFields(cfg, "credit", CREDIT_FIELDS); } catch (err) { console.warn("[ghl] credit fields unavailable:", String(err).slice(0, 160)); }
-    for (const f of CREDIT_FIELDS) {
-      const value = c.credit[f.key];
-      if (creditIds[f.key] && value) customFields.push({ id: creditIds[f.key], field_value: value });
-    }
-  }
-  const tags = [
-    "funnel-application",
-    ...(c.qualified == null ? [] : [c.qualified ? "qualified" : "not-qualified"]),
-    ...(c.phone ? [] : ["email-only"]),
-    ...(c.credit ? ["credit-checked"] : []),
-  ];
+  const tags = ["funnel-application", ...(c.qualified == null ? [] : [c.qualified ? "qualified" : "not-qualified"]), ...(c.phone ? [] : ["email-only"])];
   const body: Record<string, unknown> = {
     locationId: cfg.locationId,
     ...(parts[0] ? { firstName: parts[0] } : {}),
@@ -216,4 +201,19 @@ export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact)
   const id = data.contact?.id;
   if (!id) throw new Error("GHL upsert returned no contact id");
   return id;
+}
+
+/**
+ * Write the soft credit check figures onto an existing contact. Only the credit custom fields are sent
+ * (PUT by id), so tags, name and everything a workflow changed since the first sync stay untouched.
+ */
+export async function updateContactCredit(cfg: ContactsConfig, contactId: string, credit: ContactCredit): Promise<void> {
+  const ids = await ensureFields(cfg, "credit", CREDIT_FIELDS);
+  const customFields: Array<{ id: string; field_value: string }> = [];
+  for (const f of CREDIT_FIELDS) {
+    const value = credit[f.key];
+    if (ids[f.key] && value) customFields.push({ id: ids[f.key], field_value: value });
+  }
+  if (!customFields.length) return;
+  await ghl(cfg as GhlConfig, `/contacts/${encodeURIComponent(contactId)}`, { method: "PUT", body: JSON.stringify({ customFields }) });
 }

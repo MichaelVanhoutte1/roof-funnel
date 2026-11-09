@@ -35,25 +35,53 @@ export type CreditResult =
   | { status: "queued"; error: string }
   /** We did not call SimpleCheck (missing last name, missing IP, …). */
   | { status: "skipped"; error: string }
-  /** Transport or server failure; safe to retry later. */
-  | { status: "error"; error: string };
+  /** Transport, server or account failure (`http` = the status SimpleCheck answered with, when it answered). */
+  | { status: "error"; error: string; http?: number };
+
+const TITLES = new Set(["mr", "mrs", "ms", "miss", "mx", "dr", "sir"]);
+const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
 
 /**
  * SimpleCheck accepts letters, spaces, apostrophes and hyphens only, and needs a first and a last name.
- * Accents, periods and commas are normalised away; a name with anything else (digits, symbols) is not
- * rewritten into something the person never typed — it is simply not checked.
+ * Accents and periods are normalised away, "Last, First" is turned around, and titles, suffixes and
+ * middle initials are dropped. A name with anything else (digits, symbols) is not rewritten into
+ * something the person never typed: it is simply not checked.
  */
 export function splitName(name: string | null | undefined): { firstName: string; lastName: string } | null {
-  const clean = (name ?? "")
+  let raw = (name ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[.,]/g, " ")
     .trim();
+  const byComma = raw.split(",").map((p) => p.trim());
+  if (byComma.length === 2 && byComma[0] && byComma[1] && !SUFFIXES.has(byComma[1].replace(/\./g, "").toLowerCase())) {
+    raw = `${byComma[1]} ${byComma[0]}`;
+  }
+  const clean = raw.replace(/[.,]/g, " ").trim();
   if (/[^A-Za-z' -]/.test(clean)) return null;
-  const parts = clean.split(/\s+/).filter((p) => /[A-Za-z]/.test(p));
+  let parts = clean.split(/\s+/).filter((p) => /[A-Za-z]/.test(p));
+  while (parts.length > 1 && TITLES.has(parts[0].toLowerCase())) parts = parts.slice(1);
+  while (parts.length > 1 && SUFFIXES.has(parts[parts.length - 1].toLowerCase())) parts = parts.slice(0, -1);
+  if (parts.length > 2) parts = [parts[0], ...parts.slice(1, -1).filter((p) => p.length > 1), parts[parts.length - 1]];
   if (parts.length < 2) return null;
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+/**
+ * Stable fingerprint of who a check was run for (SHA-256 of normalised name, email and phone).
+ * Lead rows are found by phone, so this is what tells "same person again" from "someone else on this row".
+ */
+export async function identityKey(
+  name: string | null | undefined, email: string | null | undefined, phone: string | null | undefined,
+): Promise<string> {
+  const n = splitName(name);
+  const basis = [
+    (n ? `${n.firstName} ${n.lastName}` : (name ?? "").trim().replace(/\s+/g, " ")).toLowerCase(),
+    (email ?? "").trim().toLowerCase(),
+    (phone ?? "").replace(/\D/g, "").slice(-10),
+  ].join("|");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** The request body, or the reason no request can be made. */
@@ -93,30 +121,35 @@ function obj(v: unknown): Record<string, unknown> {
 
 /**
  * Map an HTTP status + parsed JSON body to a result. Only the figures the closer needs are kept;
- * the enrichment block (addresses, alternate emails, age) is deliberately not read.
+ * the enrichment block (addresses, alternate emails, age) is deliberately not read. Vendor free text is
+ * kept only for validation failures (their fixed "... is not in a valid format." messages).
  */
 export function parseResponse(httpStatus: number, raw: unknown): CreditResult {
   const body = obj(raw);
-  if (httpStatus === 202 || body.queued === true) return { status: "queued", error: text(body.message) ?? "queued" };
-  if (httpStatus !== 200) return { status: "error", error: `HTTP ${httpStatus}: ${text(body.error) ?? text(body.message) ?? "no detail"}` };
-  if (body.Status !== "Success" && body.Code !== "200") {
-    const errors = Array.isArray(body.Errors) ? body.Errors.filter((e): e is string => typeof e === "string") : [];
-    return { status: "invalid", error: (errors.join(" ") || text(body.Status) || "validation failure").slice(0, 300) };
+  if (httpStatus === 202 || body.queued === true) return { status: "queued", error: "account paused, request queued" };
+  if (httpStatus !== 200) return { status: "error", http: httpStatus, error: `HTTP ${httpStatus}` };
+  if (body.Status === "Success" || (body.Status === undefined && body.Code === "200")) {
+    const offers = obj(body.Offers);
+    const income = obj(obj(body.DataPerfection).Income);
+    return {
+      status: "success",
+      prequalId: num(body.PreQualificationID),
+      score: num(offers.OfferScore1),
+      offerStatus: text(offers.OfferStatus1),
+      offerAmount1: text(offers.OfferAmount1, 40),
+      offerAmount2: text(offers.OfferAmount2, 40),
+      dti: num(offers.OfferDebtToIncome1) ?? num(obj(body.DataEnhance).DataEnhanceDebtToIncome),
+      income: num(income.Estimate) ?? num(income.Personal),
+      householdIncome: num(income.Household),
+      creditFreeze: text(body.CreditFreeze, 20),
+    };
   }
-  const offers = obj(body.Offers);
-  const income = obj(obj(body.DataPerfection).Income);
-  return {
-    status: "success",
-    prequalId: num(body.PreQualificationID),
-    score: num(offers.OfferScore1),
-    offerStatus: text(offers.OfferStatus1),
-    offerAmount1: text(offers.OfferAmount1, 40),
-    offerAmount2: text(offers.OfferAmount2, 40),
-    dti: num(offers.OfferDebtToIncome1) ?? num(obj(body.DataEnhance).DataEnhanceDebtToIncome),
-    income: num(income.Estimate) ?? num(income.Personal),
-    householdIncome: num(income.Household),
-    creditFreeze: text(body.CreditFreeze, 20),
-  };
+  if (body.Status === "Failure" || body.Code === "201" || Array.isArray(body.Errors)) {
+    const errors = Array.isArray(body.Errors) ? body.Errors.filter((e): e is string => typeof e === "string") : [];
+    return { status: "invalid", error: (errors.join(" ") || "validation failure").slice(0, 300) };
+  }
+  // A 200 that is neither shape (an HTML error page, an empty body): nothing is known, so it stays retryable.
+  return { status: "error", http: 200, error: "unexpected response" };
 }
 
 export async function runPreQualification(
@@ -136,10 +169,13 @@ export async function runPreQualification(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const raw = await res.json().catch(() => null);
-    return parseResponse(res.status, raw);
+    const result = parseResponse(res.status, raw);
+    // Belt and braces: the token travels in the body, never the URL, and must never be stored or logged.
+    if (result.status === "invalid") return { ...result, error: result.error.split(token).join("<token>") };
+    return result;
   } catch (err) {
-    // The error text can never contain the token: it travels in the body, not the URL.
-    return { status: "error", error: String(err).slice(0, 200) };
+    const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    return { status: "error", error: timedOut ? "timeout" : "network error" };
   }
 }
 
