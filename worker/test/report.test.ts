@@ -30,6 +30,9 @@ test("setter no-show needs a past call with no conversation and either the stage
   assert.deepEqual([pending.setterShowed, pending.setterNoShow], [false, false]);
   // the call is still in the future
   assert.equal(leadOutcome(booked({ appointment_start: "2026-11-12T15:00:00.000Z", setter_calls: 1, setter_call_seconds: 5 }), NOW).setterNoShow, false);
+  // the call started 10 minutes ago and may still be going: not a no-show until half an hour has passed
+  assert.equal(leadOutcome(booked({ appointment_start: "2026-11-09T23:50:00.000Z", setter_calls: 1, setter_call_seconds: 5 }), NOW).setterNoShow, false);
+  assert.equal(leadOutcome(booked({ appointment_start: "2026-11-09T23:29:00.000Z", setter_calls: 1, setter_call_seconds: 5 }), NOW).setterNoShow, true);
   // the stage says no-show but a long call exists: the call wins
   const o = leadOutcome(booked({ pipeline_stage: "Setter Noshow", setter_calls: 2, setter_call_seconds: 300 }), NOW);
   assert.deepEqual([o.setterShowed, o.setterNoShow], [true, false]);

@@ -1,6 +1,6 @@
 /**
  * Private lead tracking page (/admin/): report, leads and disqualification rules.
- * Talks to the Worker's /admin/* endpoints with the admin key, kept in this browser only.
+ * Talks to the Worker's /admin/* endpoints with the admin key, kept in this tab only (sessionStorage).
  * Everything is rendered with textContent, so nothing a lead typed can run as markup.
  */
 (function () {
@@ -17,8 +17,12 @@
   var TOKEN_KEY = "rf_admin_key";
   var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, rules: null, questions: [], busy: false };
 
-  function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } }
-  function setToken(v) { try { if (v) localStorage.setItem(TOKEN_KEY, v); else localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+  /* sessionStorage, not localStorage: the key is visible to this tab only, which loads no third-party script.
+     (The public funnel pages on this domain load vendor scripts; those must never be able to read it.) */
+  var memoryToken = "";
+  function getToken() { try { return sessionStorage.getItem(TOKEN_KEY) || memoryToken; } catch (e) { return memoryToken; } }
+  function setToken(v) { memoryToken = v || ""; try { if (v) sessionStorage.setItem(TOKEN_KEY, v); else sessionStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+  try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
 
   function el(tag, attrs, children) {
     var n = document.createElement(tag);
@@ -279,7 +283,7 @@
       el("p", { class: "muted small", text: "With any rule below switched on, the survey waits for the soft credit check before showing the calendar (usually a few seconds, 10 at most). If the check cannot run or does not answer in time, the lead is let through." }),
       el("div", { class: "field" }, [el("div", { text: "Apply these rules to" }), applies]),
       numberField("Minimum credit score", "Disqualify anyone scoring below this.", "minScore"),
-      numberField("Minimum financing offered", "Disqualify anyone approved for less than this, or for nothing.", "minOfferAmount", "$"),
+      numberField("Minimum financing offered", "Disqualify anyone approved for less than this, or for nothing. People with no credit file are the switch below.", "minOfferAmount", "$"),
       numberField("Minimum yearly income", "Disqualify anyone whose estimated income is below this.", "minIncome", "$"),
       switchRow("No credit file found", "The check ran but could not find a credit file for the person.", rules.credit.noScore, function (on) { rules.credit.noScore = on; }),
       switchRow("Credit file is frozen", "", rules.credit.creditFreeze, function (on) { rules.credit.creditFreeze = on; }),

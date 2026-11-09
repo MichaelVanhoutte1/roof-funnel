@@ -64,6 +64,18 @@ type Opportunity = {
   lastStageChangeAt?: string; updatedAt?: string;
 };
 
+/** One opportunity per contact: the most recently changed one. */
+export function latestOpportunityPerContact(opportunities: Opportunity[]): Map<string, Opportunity> {
+  const changed = (o: Opportunity): string => o.updatedAt ?? o.lastStageChangeAt ?? "";
+  const best = new Map<string, Opportunity>();
+  for (const o of opportunities) {
+    if (!o.contactId) continue;
+    const current = best.get(o.contactId);
+    if (!current || changed(o) > changed(current)) best.set(o.contactId, o);
+  }
+  return best;
+}
+
 export async function syncPipeline(db: D1Database, cfg: GhlConfig): Promise<{ opportunities: number; updated: number }> {
   const pipes = await ghl<{ pipelines?: Array<{ stages?: Array<{ id: string; name: string }> }> }>(
     cfg, `/opportunities/pipelines?locationId=${cfg.locationId}`, { headers: OPPORTUNITIES_API },
@@ -72,7 +84,7 @@ export async function syncPipeline(db: D1Database, cfg: GhlConfig): Promise<{ op
   for (const p of pipes.pipelines ?? []) for (const s of p.stages ?? []) stageName.set(s.id, s.name);
 
   const opportunities: Opportunity[] = [];
-  for (let page = 1; page <= 10; page++) {
+  for (let page = 1; page <= 6; page++) {
     const data = await ghl<{ opportunities?: Opportunity[] }>(
       cfg, `/opportunities/search?location_id=${cfg.locationId}&limit=100&page=${page}`, { headers: OPPORTUNITIES_API },
     );
@@ -81,14 +93,16 @@ export async function syncPipeline(db: D1Database, cfg: GhlConfig): Promise<{ op
     if (batch.length < 100) break;
   }
 
-  // Only rows whose stored values differ are written.
-  const statements = opportunities.filter((o) => o.contactId).map((o) => {
+  // A contact can have several lead rows (a returning applicant): the outcome is written to the newest one only,
+  // so a close is never counted twice. Only rows whose stored values differ are written.
+  const statements = [...latestOpportunityPerContact(opportunities).entries()].map(([contactId, o]) => {
     const stage = stageName.get(o.pipelineStageId ?? "") ?? null;
     const value = typeof o.monetaryValue === "number" && o.monetaryValue > 0 ? o.monetaryValue : null;
     return db.prepare(
       `UPDATE leads SET opportunity_id = ?1, pipeline_stage = ?2, pipeline_stage_at = ?3, opportunity_status = ?4, opportunity_value = ?5
-       WHERE ghl_contact_id = ?6 AND (opportunity_id IS NOT ?1 OR pipeline_stage IS NOT ?2 OR opportunity_status IS NOT ?4 OR opportunity_value IS NOT ?5)`,
-    ).bind(o.id, stage, o.lastStageChangeAt ?? o.updatedAt ?? null, o.status ?? null, value, o.contactId);
+       WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?6)
+         AND (opportunity_id IS NOT ?1 OR pipeline_stage IS NOT ?2 OR opportunity_status IS NOT ?4 OR opportunity_value IS NOT ?5)`,
+    ).bind(o.id, stage, o.lastStageChangeAt ?? o.updatedAt ?? null, o.status ?? null, value, contactId);
   });
   return { opportunities: opportunities.length, updated: await runBatches(db, statements) };
 }
@@ -138,11 +152,14 @@ export async function syncSetterCalls(db: D1Database, cfg: GhlConfig, max: numbe
         `UPDATE leads SET setter_calls = ?1, setter_call_seconds = ?2, setter_calls_synced_at = ${SQL_NOW} WHERE id = ?3`,
       ).bind(c.calls, c.longestSeconds, lead.id));
     } catch (err) {
-      // One contact GHL will not answer for (deleted, merged) must not block everyone behind it: mark it
-      // looked-at with no call data, so the pipeline stage alone decides for that lead.
       failed++;
-      console.error("[sync] call log failed for lead", lead.id, errorText(err).replace(/contactId=[^ &]+/, "contactId=…"));
-      statements.push(db.prepare(`UPDATE leads SET setter_calls_synced_at = ${SQL_NOW} WHERE id = ?1`).bind(lead.id));
+      const text = errorText(err);
+      console.error("[sync] call log failed for lead", lead.id, text.replace(/contactId=[^ &]+/, "contactId=…"));
+      // A contact GHL no longer has (deleted, merged: 400 / 404) is marked looked-at with no call data, so the
+      // pipeline stage alone decides for that lead. Anything else (rate limit, timeout) is retried next run.
+      if (/→ (400|404|422):/.test(text)) {
+        statements.push(db.prepare(`UPDATE leads SET setter_calls_synced_at = ${SQL_NOW} WHERE id = ?1`).bind(lead.id));
+      }
     }
   }
   await runBatches(db, statements);
@@ -186,15 +203,18 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
     const data = await ghl<{ events?: CalendarEvent[] }>(cfg, `/calendars/events?locationId=${cfg.locationId}&calendarId=${c.id}&startTime=${start}&endTime=${end}`);
     events.push(...(data.events ?? []));
   }
+  // "Showed" sticks (a follow-up call does not undo the first one). Otherwise a different appointment, or the
+  // same one moved to another time, starts with unknown attendance again. The newest lead row per contact only.
+  const keep = "((closer_appointment_id IS ?1 AND closer_start IS ?2) OR closer_attended = 'showed')";
   const statements = [...pickCloserEvents(events).entries()].map(([contactId, e]) =>
-    // A different appointment (a reschedule creates a new one) starts with unknown attendance again.
     db.prepare(
-      `UPDATE leads SET closer_attended = CASE WHEN closer_appointment_id IS ?1 THEN closer_attended ELSE NULL END,
-         closer_attended_source = CASE WHEN closer_appointment_id IS ?1 THEN closer_attended_source ELSE NULL END,
-         closer_minutes = CASE WHEN closer_appointment_id IS ?1 THEN closer_minutes ELSE NULL END,
-         closer_checked_at = CASE WHEN closer_appointment_id IS ?1 THEN closer_checked_at ELSE NULL END,
+      `UPDATE leads SET closer_attended = CASE WHEN ${keep} THEN closer_attended ELSE NULL END,
+         closer_attended_source = CASE WHEN ${keep} THEN closer_attended_source ELSE NULL END,
+         closer_minutes = CASE WHEN ${keep} THEN closer_minutes ELSE NULL END,
+         closer_checked_at = CASE WHEN ${keep} THEN closer_checked_at ELSE NULL END,
          closer_appointment_id = ?1, closer_start = ?2, closer_status = ?3, closer_meet_code = ?4
-       WHERE ghl_contact_id = ?5 AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4)`,
+       WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
+         AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4)`,
     ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId));
   return { events: events.length, updated: await runBatches(db, statements) };
 }
@@ -203,20 +223,26 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
 
 export type Attendance = { attended: "showed" | "no_show"; minutes: number };
 
+/** A Meet link can be reused: only a recording / conference that started around the appointment counts. */
+const WINDOW_BEFORE_MS = 2 * 3_600_000, WINDOW_AFTER_MS = 6 * 3_600_000;
+function nearAppointment(startedIso: string | null | undefined, appointmentIso: string): boolean {
+  const started = Date.parse(startedIso ?? ""), appointment = Date.parse(appointmentIso);
+  return Number.isFinite(started) && Number.isFinite(appointment) && started >= appointment - WINDOW_BEFORE_MS && started <= appointment + WINDOW_AFTER_MS;
+}
+
 type FathomMeeting = { meeting_url?: string | null; recording_start_time?: string | null; recording_end_time?: string | null };
 
-/** Meet code → attendance from Fathom recordings: the longest recording of that meeting decides. */
-export function fathomAttendance(meetings: FathomMeeting[]): Map<string, Attendance> {
-  const out = new Map<string, Attendance>();
+/** Attendance of one closer call from Fathom: the longest recording of that Meet link around the appointment decides. */
+export function fathomAttendance(meetings: FathomMeeting[], code: string, appointmentIso: string): Attendance | null {
+  let best: Attendance | null = null;
   for (const m of meetings) {
-    const code = meetCode(m.meeting_url);
+    if (meetCode(m.meeting_url) !== code || !nearAppointment(m.recording_start_time, appointmentIso)) continue;
     const start = Date.parse(m.recording_start_time ?? ""), end = Date.parse(m.recording_end_time ?? "");
-    if (!code || !Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+    if (!Number.isFinite(end) || end < start) continue;
     const minutes = Math.round((end - start) / 60_000);
-    const previous = out.get(code);
-    if (!previous || minutes > previous.minutes) out.set(code, { attended: minutes >= FATHOM_SHOW_MIN_MINUTES ? "showed" : "no_show", minutes });
+    if (!best || minutes > best.minutes) best = { attended: minutes >= FATHOM_SHOW_MIN_MINUTES ? "showed" : "no_show", minutes };
   }
-  return out;
+  return best;
 }
 
 async function fathomMeetings(apiKey: string, sinceIso: string, maxPages: number): Promise<FathomMeeting[]> {
@@ -235,11 +261,17 @@ async function fathomMeetings(apiKey: string, sinceIso: string, maxPages: number
   return items;
 }
 
-type MeetParticipant = { earliestStartTime?: string; latestEndTime?: string };
+type MeetParticipant = {
+  earliestStartTime?: string; latestEndTime?: string;
+  signedinUser?: { displayName?: string }; anonymousUser?: { displayName?: string }; phoneUser?: { displayName?: string };
+};
 
-/** showed = at least two participants, the second-longest present for MEET_SHOW_MIN_MINUTES or more. */
+const NOTETAKER = /notetaker|fathom|otter|fireflies|read\.ai|recorder|\bbot\b/i;
+
+/** showed = at least two people (note-taking bots ignored), the second-longest present for MEET_SHOW_MIN_MINUTES or more. */
 export function meetAttendance(participants: MeetParticipant[], nowMs: number): Attendance {
   const minutes = participants
+    .filter((p) => !NOTETAKER.test(p.signedinUser?.displayName ?? p.anonymousUser?.displayName ?? p.phoneUser?.displayName ?? ""))
     .map((p) => {
       const start = Date.parse(p.earliestStartTime ?? ""), end = p.latestEndTime ? Date.parse(p.latestEndTime) : nowMs;
       return Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start) / 60_000 : 0;
@@ -275,32 +307,30 @@ async function googleAccessToken(env: SyncEnv, refreshToken: string): Promise<st
   return data.access_token;
 }
 
-async function meetParticipants(accessToken: string, code: string): Promise<MeetParticipant[] | null> {
+/** Participants of the one conference on that Meet link that started around the appointment, or null if this account has none. */
+async function meetParticipants(accessToken: string, code: string, appointmentIso: string): Promise<MeetParticipant[] | null> {
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
   const filter = encodeURIComponent(`space.meeting_code = "${code}"`);
   const res = await fetch(`https://meet.googleapis.com/v2/conferenceRecords?filter=${filter}`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Meet conferenceRecords → ${res.status}`);
-  const records = ((await res.json()) as { conferenceRecords?: Array<{ name: string }> }).conferenceRecords ?? [];
-  if (!records.length) return null; // this account did not host that meeting, or it has not happened
-  const all: MeetParticipant[] = [];
-  for (const record of records.slice(0, 2)) {
-    const p = await fetch(`https://meet.googleapis.com/v2/${record.name}/participants?pageSize=50`, { headers, signal: AbortSignal.timeout(10_000) });
-    if (!p.ok) throw new Error(`Meet participants → ${p.status}`);
-    all.push(...(((await p.json()) as { participants?: MeetParticipant[] }).participants ?? []));
-  }
-  return all;
+  const records = ((await res.json()) as { conferenceRecords?: Array<{ name: string; startTime?: string }> }).conferenceRecords ?? [];
+  const record = records.filter((r) => nearAppointment(r.startTime, appointmentIso)).sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""))[0];
+  if (!record) return null;
+  const p = await fetch(`https://meet.googleapis.com/v2/${record.name}/participants?pageSize=50`, { headers, signal: AbortSignal.timeout(10_000) });
+  if (!p.ok) throw new Error(`Meet participants → ${p.status}`);
+  return ((await p.json()) as { participants?: MeetParticipant[] }).participants ?? [];
 }
 
-type CloserDue = { id: number; closer_meet_code: string };
+type CloserDue = { id: number; closer_meet_code: string; closer_start: string };
 
 export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: number): Promise<{ source: "google_meet" | "fathom" | "none"; checked: number; resolved: number }> {
-  const tokens = env.GOOGLE_MEET_CLIENT_ID && env.GOOGLE_MEET_CLIENT_SECRET ? refreshTokens(env.GOOGLE_MEET_REFRESH_TOKENS) : [];
+  const tokens = env.GOOGLE_MEET_CLIENT_ID && env.GOOGLE_MEET_CLIENT_SECRET ? refreshTokens(env.GOOGLE_MEET_REFRESH_TOKENS).slice(0, 2) : [];
   const source = tokens.length ? "google_meet" : env.FATHOM_API_KEY ? "fathom" : "none";
   if (source === "none") return { source, checked: 0, resolved: 0 };
 
   // Closer calls that started at least 45 minutes ago, in the last 14 days, with attendance still unknown.
   const { results: due } = await env.DB.prepare(
-    `SELECT id, closer_meet_code FROM leads
+    `SELECT id, closer_meet_code, closer_start FROM leads
      WHERE closer_meet_code IS NOT NULL AND closer_attended IS NULL AND IFNULL(closer_status, '') <> 'cancelled'
        AND closer_start < strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 minutes') AND closer_start > strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days')
        AND (closer_checked_at IS NULL OR closer_checked_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 hours'))
@@ -310,18 +340,25 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
 
   const found = new Map<number, Attendance>();
   if (source === "google_meet") {
+    // One closer's revoked or expired connection must not stop the other closer's calls from being read.
     const access: string[] = [];
-    for (const t of tokens.slice(0, 4)) access.push(await googleAccessToken(env, t));
+    for (const t of tokens) {
+      try { access.push(await googleAccessToken(env, t)); } catch (err) { console.error("[sync] a Google connection failed:", errorText(err)); }
+    }
     for (const lead of due) {
       for (const token of access) {
-        const participants = await meetParticipants(token, lead.closer_meet_code);
-        if (participants) { found.set(lead.id, meetAttendance(participants, nowMs)); break; }
+        try {
+          const participants = await meetParticipants(token, lead.closer_meet_code, lead.closer_start);
+          if (participants) { found.set(lead.id, meetAttendance(participants, nowMs)); break; }
+        } catch (err) {
+          console.error("[sync] Meet lookup failed for lead", lead.id, errorText(err));
+        }
       }
     }
   } else {
-    const byCode = fathomAttendance(await fathomMeetings(env.FATHOM_API_KEY!, new Date(nowMs - 15 * 86_400_000).toISOString(), 3));
+    const meetings = await fathomMeetings(env.FATHOM_API_KEY!, new Date(nowMs - 15 * 86_400_000).toISOString(), 3);
     for (const lead of due) {
-      const a = byCode.get(lead.closer_meet_code);
+      const a = fathomAttendance(meetings, lead.closer_meet_code, lead.closer_start);
       if (a) found.set(lead.id, a);
     }
   }
@@ -343,10 +380,12 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
   if (cfg) {
     try { summary.pipeline = await syncPipeline(env.DB, cfg); } catch (err) { summary.pipeline = { error: errorText(err) }; }
     try { summary.closerAppointments = await syncCloserAppointments(env.DB, cfg, nowMs); } catch (err) { summary.closerAppointments = { error: errorText(err) }; }
-    // 2 GHL calls per lead; 12 leads keeps a whole run under ~45 subrequests.
-    try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, 12); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
+    // Budget per run (Workers free plan: 50 subrequests): pipeline <= 7, closer calendars <= 5, call logs 2 per lead,
+    // attendance <= 3 with Fathom, or <= 11 with Google Meet (2 token exchanges + at most 3 calls for each of 3 leads).
+    const callLogs = env.GOOGLE_MEET_REFRESH_TOKENS ? 8 : 12;
+    try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
   }
-  try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 4); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }
+  try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 3); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }
   try {
     await env.DB.prepare(
       `INSERT INTO settings (key, value, updated_at) VALUES ('sync_status', ?1, ${SQL_NOW})

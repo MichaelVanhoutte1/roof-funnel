@@ -68,6 +68,18 @@ export function creditProblemMessage(reason: string): Record<string, unknown> {
   };
 }
 
+/** The lead was alerted (from the partial save) and then did not pass the credit rules on submit. */
+export function leadWithdrawnMessage(l: { id: number; name?: string | null }): Record<string, unknown> {
+  const name = l.name?.trim() || "Unknown name";
+  return {
+    text: `Not qualified after all: ${name}`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `↩️ *${esc(name)}* did not pass the credit rules and was not offered a call.` } },
+      { type: "context", elements: [{ type: "mrkdwn", text: `lead #${l.id}` }] },
+    ],
+  };
+}
+
 export async function postSlack(webhookUrl: string, body: Record<string, unknown>): Promise<void> {
   const res = await fetch(webhookUrl, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),

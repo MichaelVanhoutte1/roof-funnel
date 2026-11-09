@@ -17,6 +17,7 @@ test("default rules reproduce the old funnel: only the No capital answer is turn
   assert.equal(answersQualify(DEFAULT_RULES, { capital: YES_CASH }), true);
   assert.equal(answersQualify(DEFAULT_RULES, { capital: NO }), false);
   assert.equal(answersQualify(DEFAULT_RULES, { timeline: "Right away" }), false); // capital not answered yet
+  assert.equal(answersQualify(DEFAULT_RULES, { capital: "anything else" }), false); // not one of the survey's answers
   assert.equal(creditRulesApply(DEFAULT_RULES, { capital: YES_FIN }), false);
 });
 

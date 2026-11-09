@@ -329,7 +329,7 @@
   }
 
   function sendPartial(force) {
-    if (partialSent || fullSent) return;
+    if (partialSent || fullSent || state.submitting) return; /* the full submit is on its way (it can take ~10 s) */
     var c = readContact();
     if (!c.phone || c.digits.length !== 10) return;
     if (!force && Date.now() - phoneEditedAt < PHONE_SETTLE_MS) return;

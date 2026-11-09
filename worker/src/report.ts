@@ -15,6 +15,7 @@ import { parseMoney } from "./rules.ts";
 
 /** Measured on 99 past booked leads (2026-11-09): every lead moved past the setter had a call >= 120 s, no no-show did. */
 export const SHOW_MIN_CALL_SECONDS = 120;
+const NO_SHOW_GRACE_MS = 30 * 60_000;
 
 export type ReportLead = {
   status: string;
@@ -79,7 +80,8 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const stage = STAGE_FACTS[(l.pipeline_stage ?? "").trim().toLowerCase()] ?? NO;
   const won = stage.won || l.opportunity_status === "won";
   const booked = !!l.appointment_id;
-  const past = !!l.appointment_start && l.appointment_start <= nowIso;
+  // A call counts as missed half an hour after its start, so a call in progress is not a no-show.
+  const past = !!l.appointment_start && Date.parse(l.appointment_start) + NO_SHOW_GRACE_MS <= Date.parse(nowIso);
   const longCall = (l.setter_call_seconds ?? 0) >= SHOW_MIN_CALL_SECONDS;
   const talked = longCall || stage.talked || won;
   // A past booked call with no conversation is a no-show once the setter marked it or tried calling.

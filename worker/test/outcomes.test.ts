@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fathomAttendance, meetAttendance, meetCode, pickCloserEvents, summarizeCalls } from "../src/outcomes.ts";
+import { fathomAttendance, latestOpportunityPerContact, meetAttendance, meetCode, pickCloserEvents, summarizeCalls } from "../src/outcomes.ts";
 
 test("summarizeCalls counts call records and keeps the longest completed one", () => {
   const r = summarizeCalls([
@@ -34,18 +34,31 @@ test("pickCloserEvents keeps one appointment per contact: live beats cancelled, 
   assert.deepEqual([...picked.entries()].map(([c, e]) => [c, e.id]), [["c1", "new"], ["c2", "only-cancelled"]]);
 });
 
-test("fathomAttendance: a long recording of the meeting is a show, a short one a no-show, the longest decides", () => {
-  const m = fathomAttendance([
+test("latestOpportunityPerContact keeps the most recently changed opportunity of each contact", () => {
+  const m = latestOpportunityPerContact([
+    { id: "o1", contactId: "c1", updatedAt: "2026-11-01T00:00:00Z" },
+    { id: "o2", contactId: "c1", updatedAt: "2026-11-05T00:00:00Z" },
+    { id: "o3", contactId: "c1", updatedAt: "2026-11-03T00:00:00Z" },
+    { id: "o4", contactId: "c2", lastStageChangeAt: "2026-11-02T00:00:00Z" },
+    { id: "o5" },
+  ]);
+  assert.deepEqual([...m.entries()].map(([c, o]) => [c, o.id]), [["c1", "o2"], ["c2", "o4"]]);
+});
+
+test("fathomAttendance: the longest recording of that Meet link around the appointment decides", () => {
+  const meetings = [
     { meeting_url: "https://meet.google.com/aaa-bbbb-ccc", recording_start_time: "2026-11-01T15:00:00Z", recording_end_time: "2026-11-01T15:04:00Z" },
     { meeting_url: "https://meet.google.com/aaa-bbbb-ccc", recording_start_time: "2026-11-01T15:10:00Z", recording_end_time: "2026-11-01T15:52:00Z" },
     { meeting_url: "https://meet.google.com/ddd-eeee-fff", recording_start_time: "2026-11-01T15:00:00Z", recording_end_time: "2026-11-01T15:06:00Z" },
     { meeting_url: "https://zoom.us/j/123", recording_start_time: "2026-11-01T15:00:00Z", recording_end_time: "2026-11-01T16:00:00Z" },
     { meeting_url: "https://meet.google.com/ggg-hhhh-iii", recording_start_time: null, recording_end_time: null },
-  ]);
-  assert.deepEqual([...m.entries()], [
-    ["aaa-bbbb-ccc", { attended: "showed", minutes: 42 }],
-    ["ddd-eeee-fff", { attended: "no_show", minutes: 6 }],
-  ]);
+  ];
+  assert.deepEqual(fathomAttendance(meetings, "aaa-bbbb-ccc", "2026-11-01T15:00:00.000Z"), { attended: "showed", minutes: 42 });
+  assert.deepEqual(fathomAttendance(meetings, "ddd-eeee-fff", "2026-11-01T15:00:00.000Z"), { attended: "no_show", minutes: 6 });
+  assert.equal(fathomAttendance(meetings, "ggg-hhhh-iii", "2026-11-01T15:00:00.000Z"), null);
+  assert.equal(fathomAttendance(meetings, "zzz-zzzz-zzz", "2026-11-01T15:00:00.000Z"), null);
+  // the same link reused for another lead's call a week later is not this appointment
+  assert.equal(fathomAttendance(meetings, "aaa-bbbb-ccc", "2026-11-08T15:00:00.000Z"), null);
 });
 
 test("meetAttendance: showed needs a second participant present for five minutes", () => {
@@ -60,4 +73,9 @@ test("meetAttendance: showed needs a second participant present for five minutes
     { earliestStartTime: "2026-11-01T15:01:00Z", latestEndTime: "2026-11-01T15:03:00Z" },
   ], now), { attended: "no_show", minutes: 2 });
   assert.deepEqual(meetAttendance([], now), { attended: "no_show", minutes: 0 });
+  // the closer plus a note-taking bot is still a no-show
+  assert.deepEqual(meetAttendance([
+    { earliestStartTime: "2026-11-01T15:00:00Z", latestEndTime: "2026-11-01T15:20:00Z", signedinUser: { displayName: "Calvin" } },
+    { earliestStartTime: "2026-11-01T15:00:00Z", latestEndTime: "2026-11-01T15:20:00Z", anonymousUser: { displayName: "Fathom Notetaker" } },
+  ], now), { attended: "no_show", minutes: 0 });
 });

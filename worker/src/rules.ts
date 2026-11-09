@@ -19,7 +19,7 @@ export type CreditRules = {
   appliesTo: "all" | "financing";
   /** Disqualify below this credit score. */
   minScore: number | null;
-  /** Disqualify when the largest financing amount offered is below this (or nothing was offered). */
+  /** Disqualify when the largest financing amount offered is below this (or nothing was offered). A report with no credit file is the `noScore` switch's call, not this rule's. */
   minOfferAmount: number | null;
   /** Disqualify below this estimated yearly income. Leads with no income estimate are not blocked. */
   minIncome: number | null;
@@ -84,9 +84,9 @@ export function answerDqReason(rules: Rules, a: Answers): string | null {
   return null;
 }
 
-/** Qualified on the answers so far: the capital question is answered and nothing given is disqualifying. */
+/** Qualified on the answers so far: the capital question has a real answer and nothing given is disqualifying. */
 export function answersQualify(rules: Rules, a: Answers): boolean {
-  return !!a.capital && answerDqReason(rules, a) === null;
+  return !!a.capital && (CAPITAL_OPTIONS as readonly string[]).includes(a.capital) && answerDqReason(rules, a) === null;
 }
 
 function anyCreditRule(c: CreditRules): boolean {
