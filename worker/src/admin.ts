@@ -9,6 +9,7 @@ import { buildReport, leadOutcome, type ReportLead } from "./report.ts";
 import { DEFAULT_RULES, normalizeRules, RULE_QUESTIONS, type Rules } from "./rules.ts";
 import { runOutcomeSync, type SyncEnv } from "./outcomes.ts";
 import { parseServiceAccount } from "./google.ts";
+import { buildAppointments, buildLeaderboard, type SalesLead } from "./sales.ts";
 
 export type AdminEnv = SyncEnv & {
   ADMIN_TOKEN?: string;
@@ -62,7 +63,7 @@ function isoParam(v: string | null, fallback: string): string {
   return Number.isFinite(t) ? new Date(t).toISOString() : fallback;
 }
 
-const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start,
+const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start, appointment_status,
   pipeline_stage, opportunity_status, opportunity_value, setter_calls, setter_call_seconds, closer_appointment_id, closer_start,
   closer_status, closer_attended, credit_status, credit_score, credit_offer_amount_1, credit_offer_amount_2`;
 
@@ -100,6 +101,17 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
         googleMeet: !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT),
       },
     }, 200, cors);
+  }
+
+  if (request.method === "GET" && path === "/admin/sales") {
+    // Appointments placed in the range by their own start time (a lead applied in October can have a call in November).
+    const { results } = await env.DB.prepare(
+      `SELECT id, name, city, setter_host, closer_host, closer_attended_source, closer_minutes, pipeline_stage_at, ${REPORT_COLUMNS} FROM leads
+       WHERE (appointment_start >= ?1 AND appointment_start < ?2) OR (closer_start >= ?1 AND closer_start < ?2) ORDER BY id DESC LIMIT 5000`,
+    ).bind(from, to).all<SalesLead>();
+    const appointments = buildAppointments(results, from, to, nowIso);
+    const names = await env.DB.prepare("SELECT value FROM settings WHERE key = 'ghl_users'").first<{ value: string }>();
+    return json({ ok: true, from, to, appointments, leaderboard: buildLeaderboard(appointments), names: names?.value ? JSON.parse(names.value) : {} }, 200, cors);
   }
 
   if (request.method === "GET" && path === "/admin/leads") {

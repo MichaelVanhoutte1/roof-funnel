@@ -5,7 +5,7 @@ import { buildReport, leadOutcome, offerBand, resultLabel, scoreBand, sourceLabe
 const NOW = "2026-11-10T00:00:00.000Z";
 const lead = (over: Partial<ReportLead> = {}): ReportLead => ({
   status: "full", route: "calendar", dq_reason: null, timeline: "Right away", business_owner: "I own a business",
-  capital: "Yes, I will use financing.", tracking: null, appointment_id: null, appointment_start: null, pipeline_stage: null,
+  capital: "Yes, I will use financing.", tracking: null, appointment_id: null, appointment_start: null, appointment_status: null, pipeline_stage: null,
   opportunity_status: null, opportunity_value: null, setter_calls: null, setter_call_seconds: null, closer_appointment_id: null,
   closer_start: null, closer_status: null, closer_attended: null, credit_status: null, credit_score: null,
   credit_offer_amount_1: null, credit_offer_amount_2: null, ...over,
@@ -20,6 +20,16 @@ test("setter show comes from a long call or from the pipeline having moved past 
   assert.equal(leadOutcome(booked({ pipeline_stage: "closer followup" }), NOW).setterShowed, true);
   // not booked through the funnel: counted as talked-to stages, never as a show
   assert.equal(leadOutcome(lead({ setter_call_seconds: 600, pipeline_stage: "Closer Booked" }), NOW).setterShowed, false);
+});
+
+test("the GHL appointment status is a witness: showed / noshow marked by hand count", () => {
+  assert.equal(leadOutcome(booked({ appointment_status: "showed", pipeline_stage: "Setter Booked" }), NOW).setterShowed, true);
+  assert.equal(leadOutcome(booked({ appointment_status: "noshow", pipeline_stage: "Setter Booked" }), NOW).setterNoShow, true);
+  const c = leadOutcome(lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "showed", pipeline_stage: "Closer Booked" }), NOW);
+  assert.deepEqual([c.closerShowed, c.closerNoShow], [true, false]);
+  // measured attendance beats the hand-set status
+  const m = leadOutcome(lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "showed", closer_attended: "no_show", pipeline_stage: "Closer Booked" }), NOW);
+  assert.deepEqual([m.closerShowed, m.closerNoShow], [false, true]);
 });
 
 test("setter no-show needs a past call with no conversation and either the stage or call attempts", () => {
@@ -80,6 +90,46 @@ test("bands and labels", () => {
   assert.equal(resultLabel({ status: "partial", route: null, dq_reason: null }), "Did not finish the survey");
   assert.equal(resultLabel({ status: "full", route: "dq", dq_reason: "credit:min_score" }), "Disqualified: credit score");
   assert.equal(resultLabel({ status: "full", route: "dq", dq_reason: null }), "Disqualified");
+});
+
+test("booked calls without an outcome split into upcoming / cancelled / pending, so the counts add up to booked", () => {
+  const open = (o: ReturnType<typeof leadOutcome>) => [o.setterShowed, o.setterNoShow, o.setterUpcoming, o.setterCancelled, o.setterPending];
+  assert.deepEqual(open(leadOutcome(booked({ appointment_start: "2026-11-12T15:00:00.000Z" }), NOW)), [false, false, true, false, false]);
+  assert.deepEqual(open(leadOutcome(booked({ appointment_status: "cancelled" }), NOW)), [false, false, false, true, false]);
+  assert.deepEqual(open(leadOutcome(booked({ pipeline_stage: "Setter Booked" }), NOW)), [false, false, false, false, true]);
+  // A no-show the setter marked stays a no-show even when the GHL appointment was cancelled afterwards.
+  assert.deepEqual(open(leadOutcome(booked({ pipeline_stage: "Setter Noshow", appointment_status: "cancelled" }), NOW)), [false, true, false, false, false]);
+  assert.deepEqual(open(leadOutcome(booked({ setter_call_seconds: 400 }), NOW)), [true, false, false, false, false]);
+  assert.deepEqual(open(leadOutcome(lead({ pipeline_stage: "Setter Booked" }), NOW)), [false, false, false, false, false]);
+
+  const closer = (o: ReturnType<typeof leadOutcome>) => [o.closerShowed, o.closerNoShow, o.closerUpcoming, o.closerCancelled, o.closerPending];
+  const c = (over: Partial<ReportLead>) => lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "confirmed", pipeline_stage: "Closer Booked", ...over });
+  assert.deepEqual(closer(leadOutcome(c({ closer_start: "2026-11-12T15:00:00.000Z" }), NOW)), [false, false, true, false, false]);
+  assert.deepEqual(closer(leadOutcome(c({ closer_status: "cancelled" }), NOW)), [false, false, false, true, false]);
+  assert.deepEqual(closer(leadOutcome(c({}), NOW)), [false, false, false, false, true]);
+  // Half an hour of grace: a call that started 20 minutes ago is still upcoming, 31 minutes ago is pending.
+  assert.deepEqual(closer(leadOutcome(c({ closer_start: "2026-11-09T23:40:00.000Z" }), NOW)), [false, false, true, false, false]);
+  assert.deepEqual(closer(leadOutcome(c({ closer_start: "2026-11-09T23:29:00.000Z" }), NOW)), [false, false, false, false, true]);
+  // Closer Booked by stage with no appointment on the calendar: nothing to wait for, so pending.
+  assert.deepEqual(closer(leadOutcome(lead({ pipeline_stage: "Closer Booked" }), NOW)), [false, false, false, false, true]);
+  assert.deepEqual(closer(leadOutcome(c({ closer_attended: "showed" }), NOW)), [true, false, false, false, false]);
+  assert.deepEqual(closer(leadOutcome(c({ pipeline_stage: "Closer Booked Noshow", closer_status: "cancelled" }), NOW)), [false, true, false, false, false]);
+
+  const leads: ReportLead[] = [
+    booked({ setter_call_seconds: 400, pipeline_stage: "Closer Followup", closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z" }),
+    booked({ setter_call_seconds: 400, pipeline_stage: "Closer Booked Noshow", closer_appointment_id: "c2", closer_start: "2026-11-05T15:00:00.000Z" }),
+    booked({ setter_call_seconds: 400, pipeline_stage: "Closer Booked", closer_appointment_id: "c3", closer_start: "2026-11-05T15:00:00.000Z" }),
+    booked({ setter_call_seconds: 400, pipeline_stage: "Closer Booked", closer_appointment_id: "c4", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "cancelled" }),
+    booked({ setter_call_seconds: 400, pipeline_stage: "Closer Booked", closer_appointment_id: "c5", closer_start: "2026-11-12T15:00:00.000Z" }),
+    booked({ pipeline_stage: "Setter Booked" }),
+    booked({ appointment_status: "cancelled" }),
+    booked({ appointment_start: "2026-11-12T15:00:00.000Z" }),
+  ];
+  const t = buildReport(leads, NOW).totals;
+  assert.deepEqual([t.booked, t.showed, t.noShow, t.pending, t.cancelled, t.upcoming], [8, 5, 0, 1, 1, 1]);
+  assert.equal(t.showed + t.noShow + t.pending + t.cancelled + t.upcoming, t.booked);
+  assert.deepEqual([t.closerBooked, t.closerShowed, t.closerNoShow, t.closerPending, t.closerCancelled, t.closerUpcoming], [5, 1, 1, 1, 1, 1]);
+  assert.equal(t.closerShowed + t.closerNoShow + t.closerPending + t.closerCancelled + t.closerUpcoming, t.closerBooked);
 });
 
 test("buildReport totals, rates and per-answer rows", () => {

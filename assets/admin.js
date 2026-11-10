@@ -15,7 +15,7 @@
   if (isLocal && override) API = override.replace(/\/+$/, ""); // local preview against a local Worker only
 
   var TOKEN_KEY = "rf_admin_key";
-  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, rules: null, questions: [], busy: false, open: {} };
+  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, sales: null, rules: null, questions: [], busy: false, open: {} };
 
   /* sessionStorage, not localStorage: the key is visible to this tab only, which loads no third-party script.
      (The public funnel pages on this domain load vendor scripts; those must never be able to read it.) */
@@ -54,6 +54,26 @@
   }
 
   /* ---------------- formatting ---------------- */
+  /* Lucide outlines (the icons CSP's nav uses), drawn inline so the page loads nothing from a CDN. */
+  var ICONS = {
+    handshake: ["m11 17 2 2a1 1 0 1 0 3-3", "m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4", "m21 3 1 11h-2", "M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3", "M3 4h8"],
+    dollar: ["M12 2v20", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
+    calcheck: ["M8 2v4", "M16 2v4", "M3 10h18", "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "m9 16 2 2 4-4"],
+    activity: ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"],
+    users: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M16 3.13a4 4 0 0 1 0 7.75", "M22 21v-2a4 4 0 0 0-3-3.87", "M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"],
+    sliders: ["M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4"],
+    chevron: ["m6 9 6 6 6-6"],
+    logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
+  };
+  function svg(name, cls) {
+    var ns = "http://www.w3.org/2000/svg";
+    var s = document.createElementNS(ns, "svg");
+    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor");
+    s.setAttribute("stroke-width", "2"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    s.setAttribute("class", "ic" + (cls ? " " + cls : "")); s.setAttribute("aria-hidden", "true");
+    (ICONS[name] || []).forEach(function (d) { var p = document.createElementNS(ns, "path"); p.setAttribute("d", d); s.appendChild(p); });
+    return s;
+  }
   function num(n) { return (n || 0).toLocaleString("en-US"); }
   function pct(r) { return r == null ? "–" : Math.round(r * 100) + "%"; }
   function money(n) { return n == null ? "–" : "$" + Math.round(n).toLocaleString("en-US"); }
@@ -63,12 +83,24 @@
 
   /* ---------------- date range ---------------- */
   function rangeBounds() {
+    // Same presets as CSP's DateRangePicker. "to" is exclusive; future-dated appointments are included when it is open.
     var now = new Date(), from = null, to = null;
-    if (state.range === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
-    else if (state.range === "last-month") { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
-    else if (state.range === "7") from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-    else if (state.range === "30") from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
-    else if (state.range === "custom") {
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var daysAgo = function (n) { return new Date(now.getFullYear(), now.getMonth(), now.getDate() - n); };
+    var r = state.range;
+    if (r === "today") { from = today; to = daysAgo(-1); }
+    else if (r === "yesterday") { from = daysAgo(1); to = today; }
+    else if (r === "7") from = daysAgo(6);
+    else if (r === "14") from = daysAgo(13);
+    else if (r === "30") from = daysAgo(29);
+    else if (r === "90") from = daysAgo(89);
+    else if (r === "6m") from = daysAgo(182);
+    else if (r === "1y") from = daysAgo(365);
+    else if (r === "week") { var dow = (now.getDay() + 6) % 7; from = daysAgo(dow); }
+    else if (r === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
+    else if (r === "last-month") { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (r === "quarter") from = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    else if (r === "custom") {
       if (state.from) from = new Date(state.from + "T00:00:00");
       if (state.to) { to = new Date(state.to + "T00:00:00"); to.setDate(to.getDate() + 1); }
     }
@@ -104,9 +136,11 @@
     if (!getToken()) return renderLogin();
     state.busy = true; render();
     var q = rangeBounds();
-    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules")])
+    // The sales views fail on their own (their columns arrive with migration 0009); the other tabs keep working.
+    var sales = api("/admin/sales" + q).catch(function (e) { if (e.unauthorized) throw e; return { error: e.message || "Could not load." }; });
+    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules"), sales])
       .then(function (r) {
-        state.report = r[0]; state.leads = r[1].leads; state.rules = r[2].rules; state.questions = r[2].questions; state.error = "";
+        state.report = r[0]; state.leads = r[1].leads; state.rules = r[2].rules; state.questions = r[2].questions; state.sales = r[3]; state.error = "";
       })
       .catch(function (e) {
         if (e.unauthorized) { state.busy = false; return renderLogin("That key was not accepted."); }
@@ -166,8 +200,19 @@
     return details;
   }
 
-  function stat(label, value, sub) {
-    return el("div", { class: "stat" }, [el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "sub", text: sub || "" })]);
+  function stat(label, value, sub, sub2) {
+    var kids = [el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "sub", text: sub || "" })];
+    if (sub2) kids.push(el("div", { class: "sub", text: sub2 }));
+    return el("div", { class: "stat" }, kids);
+  }
+
+  /* Booked calls that are not in the show rate (yet), so a card always adds up to its booked count. */
+  function openCalls(pending, cancelled, upcoming) {
+    var parts = [];
+    if (pending) parts.push(num(pending) + " no outcome yet");
+    if (cancelled) parts.push(num(cancelled) + " cancelled");
+    if (upcoming) parts.push(num(upcoming) + " upcoming");
+    return parts.join(" · ");
   }
 
   function syncErrors(s) {
@@ -181,9 +226,9 @@
     box.appendChild(el("div", { class: "cards" }, [
       stat("Total Leads", num(t.leads), num(t.qualified) + " sent to the calendar"),
       stat("Setter Booked", num(t.booked), pct(t.bookRate) + " of leads"),
-      stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show"),
+      stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show", openCalls(t.pending, t.cancelled, t.upcoming)),
       stat("Closer Booked", num(t.closerBooked), pct(t.closerBookRate) + " of setter shows"),
-      stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show"),
+      stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show", openCalls(t.closerPending, t.closerCancelled, t.closerUpcoming)),
       stat("Close Rate", pct(t.closeRate), num(t.won) + " won of " + num(t.closerShowed) + " closer shows"),
       stat("$ / Booked Call", money(t.cashPerBooked), money(t.cash) + " cash"),
     ]));
@@ -308,11 +353,10 @@
   /* ---------------- shell ---------------- */
   function render() {
     root.innerHTML = "";
-    var range = el("select", { "aria-label": "Date range" }, [
-      el("option", { value: "month", text: "This month" }), el("option", { value: "last-month", text: "Last month" }),
-      el("option", { value: "7", text: "Last 7 days" }), el("option", { value: "30", text: "Last 30 days" }),
-      el("option", { value: "all", text: "All time" }), el("option", { value: "custom", text: "Custom dates" }),
-    ]);
+    var presets = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["90", "Last 90 days"],
+      ["6m", "Last 6 months"], ["1y", "Last year"], ["week", "This week"], ["month", "This month"], ["last-month", "Last month"], ["quarter", "This quarter"],
+      ["all", "All time"], ["custom", "Custom dates"]];
+    var range = el("select", { "aria-label": "Date range" }, presets.map(function (p) { return el("option", { value: p[0], text: p[1] }); }));
     range.value = state.range;
     range.addEventListener("change", function () { state.range = range.value; if (state.range !== "custom") load(); else render(); });
     var custom = null;
@@ -331,24 +375,43 @@
         state.error = "Sync failed: " + e.message; render();
       });
     });
-    root.appendChild(el("div", { class: "bar" }, [
-      el("h1", { text: "Lead tracking" }), el("span", { class: "grow" }), range, custom,
-      el("button", { type: "button", class: "btn", text: "Refresh", on: { click: load } }), sync,
-      el("button", { type: "button", class: "btn", text: "Sign out", on: { click: function () { setToken(""); renderLogin(); } } }),
-    ]));
-    var tabs = [["overview", "Overview"], ["leads", "Leads"], ["rules", "Rules"]];
-    root.appendChild(el("div", { class: "tabs", role: "tablist" }, tabs.map(function (t) {
-      return el("button", { type: "button", class: "tab", role: "tab", "aria-selected": state.tab === t[0] ? "true" : "false", text: t[1], on: { click: function () {
-        if (state.dirty && state.tab === "rules" && !window.confirm("You have unsaved rule changes. Leave without saving?")) return;
-        state.tab = t[0]; render();
-      } } });
-    })));
-    if (state.error) root.appendChild(el("div", { class: "notice bad", role: "alert", text: state.error }));
-    var box = el("div", { role: "tabpanel" });
-    root.appendChild(box);
+    /* Shell like CSP's Layout: 256px sidebar (brand, nav groups, account row), page header strip, padded content. */
+    var go = function (tab) {
+      if (state.dirty && state.tab === "rules" && !window.confirm("You have unsaved rule changes. Leave without saving?")) return;
+      state.tab = tab; state.menuOpen = false; render();
+    };
+    var navItem = function (tab, label, icon, nested) {
+      return el("button", { type: "button", class: "nav-b" + (nested ? " nested" : "") + (state.tab === tab ? " active" : ""), "aria-current": state.tab === tab ? "page" : null, on: { click: function () { go(tab); } } }, [svg(icon), el("span", { text: label })]);
+    };
+    var salesOpen = state.salesOpen !== false;
+    var nav = el("nav", { class: "nav", "aria-label": "Sections" }, [
+      el("button", { type: "button", class: "nav-b group", "aria-expanded": salesOpen ? "true" : "false", on: { click: function () { state.salesOpen = !salesOpen; render(); } } }, [svg("handshake"), el("span", { class: "grow", text: "Sales" }), svg("chevron", salesOpen ? "chev open" : "chev")]),
+      salesOpen ? el("div", { class: "nav-children" }, [navItem("leaderboard", "Leaderboard", "dollar", true), navItem("appointments", "Appointments", "calcheck", true), navItem("overview", "Lead Scoring", "activity", true)]) : null,
+      navItem("leads", "Leads", "users"), navItem("rules", "Rules", "sliders"),
+    ]);
+    var sidebar = el("aside", { class: "sidebar" + (state.menuOpen ? " open" : "") }, [
+      el("div", { class: "brand" }, [el("h1", { text: "Start Roof Rejuvenating" })]),
+      nav,
+      el("div", { class: "sidebar-foot" }, [el("button", { type: "button", class: "nav-b", on: { click: function () { setToken(""); renderLogin(); } } }, [svg("logout"), el("span", { text: "Sign out" })])]),
+    ]);
+    var titles = { overview: "Lead Scoring", leaderboard: "Sales Leaderboard", appointments: "Appointments", leads: "Leads", rules: "Rules" };
+    var header = el("header", { class: "page-head" }, [
+      el("button", { type: "button", class: "btn menu", "aria-label": "Menu", text: "☰", on: { click: function () { state.menuOpen = !state.menuOpen; render(); } } }),
+      el("h2", { class: "page-title", text: titles[state.tab] || "" }),
+      el("div", { class: "page-right" }, [range, custom, el("button", { type: "button", class: "btn", text: "Refresh", on: { click: load } }), sync]),
+    ]);
+    var box = el("div", { class: "content", role: "tabpanel" });
+    if (state.error) box.appendChild(el("div", { class: "notice bad", role: "alert", text: state.error }));
+    root.appendChild(el("div", { class: "shell" }, [sidebar, el("div", { class: "main" }, [header, box])]));
     if (state.busy && !state.report) { box.appendChild(el("p", { class: "muted", text: "Loading…" })); return; }
     if (state.tab === "overview") renderOverview(box);
     else if (state.tab === "leads") renderLeads(box);
+    else if (state.tab === "leaderboard" || state.tab === "appointments") {
+      // Sales views live in admin-sales.js (same page, same data); they get the helpers they need and nothing else.
+      var sales = window.RFAdminSales;
+      if (!sales) box.appendChild(el("p", { class: "muted", text: "The sales views did not load. Refresh the page." }));
+      else sales[state.tab === "leaderboard" ? "renderLeaderboard" : "renderAppointments"](box, state.sales, { el: el, pill: pill, num: num, pct: pct, money: money, state: state, rerender: render });
+    }
     else renderRules(box);
   }
 
