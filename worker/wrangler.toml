@@ -12,7 +12,8 @@ routes = [
 # Comma-separated browser origins allowed to call the API.
 ALLOWED_ORIGINS = "https://startroofrejuvenating.com,https://www.startroofrejuvenating.com"
 # Leads are processed for these IP countries only; others get a silent success (no CRM).
-ALLOWED_COUNTRIES = "US,CA"
+# US only (Michael, 2026-11-10: not selling in Canada; SimpleCheck cannot check Canadians anyway). Others are silently dropped.
+ALLOWED_COUNTRIES = "US"
 # Secrets (wrangler secret put): GHL_WEBHOOK_URL (LeadConnector inbound-webhook workflow URL),
 # ADMIN_TOKEN (bearer for GET /leads export), GHL_PIT (Private Integration Token for the native calendar).
 # Native booking step: set both ids here (or as secrets) once the calendar exists; until then the

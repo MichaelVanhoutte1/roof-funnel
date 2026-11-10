@@ -451,6 +451,7 @@
     }
     if (s.key === "name") {
       if (!c.name) { setError("name", "Please enter your full name"); return; }
+      if (c.name.split(/\s+/).length < 2) { setError("name", "Please enter your first and last name"); return; }
       setError("name", ""); trackStep("name", c.name); goTo(state.step + 1); focusStep(state.step); return;
     }
     if (s.key === "email") {
@@ -495,6 +496,7 @@
           // A rejected phone or email is fixed on its own step; anything else is shown under the last question.
           if (/phone/i.test(msg)) { setError("phone", msg); goTo(PHONE_STEP); focusStep(PHONE_STEP); }
           else if (/email/i.test(msg)) { setError("email", msg); goTo(PHONE_STEP - 1); focusStep(PHONE_STEP - 1); }
+          else if (/name/i.test(msg)) { setError("name", msg); goTo(PHONE_STEP - 2); focusStep(PHONE_STEP - 2); }
           else setError(lastKey, msg);
           return;
         }
