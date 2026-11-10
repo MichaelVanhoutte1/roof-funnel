@@ -504,7 +504,7 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
         // the lead counts, as routing would.
         const outcome = await Promise.race([credit, new Promise<null>((resolve) => setTimeout(() => resolve(null), CREDIT_ROUTING_WAIT_MS))]);
         const result = outcome?.result ?? null;
-        const broken = result?.status === "success" ? creditDqReason(rules, result) : null;
+        const broken = result?.status === "success" ? creditDqReason(rules, result, answers) : null;
         if (broken) {
           dqReason = broken;
           console.log(`[${tag}] lead`, row.id, "held back by a credit rule");
@@ -527,7 +527,7 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
       }
       // A resubmit (with or without the consent flag) is judged on the result already stored for this person.
       if (!result) result = await storedCreditFor(env, row).catch(() => null);
-      const broken = result?.status === "success" ? creditDqReason(rules, result) : null;
+      const broken = result?.status === "success" ? creditDqReason(rules, result, answers) : null;
       if (broken) {
         dqReason = broken;
         console.log(`[${tag}] lead`, row.id, "disqualified by a credit rule");
@@ -1120,7 +1120,7 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
         `SELECT credit_status, ${CREDIT_RESULT_COLUMNS.join(", ")} FROM leads WHERE id = ?1`,
       ).bind(lead.id).first<CreditColumns & { credit_status: string | null }>();
       const stored_result = stored && stored.credit_status === "success" ? creditFromColumns(stored) : null;
-      const broken = stored_result && stored_result.status === "success" ? creditDqReason(rules, stored_result) : null;
+      const broken = stored_result && stored_result.status === "success" ? creditDqReason(rules, stored_result, { capital: lead.capital }) : null;
       if (broken) {
         await storeRoute(env, lead.id, broken);
         console.log("[book] lead", lead.id, "refused: a credit rule is broken");

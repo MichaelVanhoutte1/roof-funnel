@@ -330,13 +330,23 @@
   }
 
   /* ---------------- rules ---------------- */
-  function numberField(label, hint, key, prefix) {
-    var input = el("input", { type: "number", min: "0", step: key === "minScore" ? "1" : "500", inputmode: "numeric", placeholder: "Off", "aria-label": label,
-      value: state.rules.credit[key] == null ? "" : String(state.rules.credit[key]) });
-    input.addEventListener("input", function () { var v = Number(input.value); state.rules.credit[key] = input.value !== "" && isFinite(v) && v > 0 ? v : null; state.dirty = true; });
+  /* One threshold of one credit column (kind = "cash" | "financing"). */
+  function numberField(label, hint, kind, key, prefix) {
+    var col = state.rules.credit[kind];
+    var input = el("input", { type: "number", min: "0", step: key === "minScore" ? "1" : "500", inputmode: "numeric", placeholder: "Off", "aria-label": label + " (" + kind + ")",
+      value: col[key] == null ? "" : String(col[key]) });
+    input.addEventListener("input", function () { var v = Number(input.value); col[key] = input.value !== "" && isFinite(v) && v > 0 ? v : null; state.dirty = true; });
     return el("div", { class: "field" }, [
-      el("div", null, [el("div", { text: label }), el("div", { class: "muted small", text: hint })]),
+      el("div", null, [el("div", { text: label }), hint ? el("div", { class: "muted small", text: hint }) : null]),
       el("div", null, [prefix ? el("span", { class: "muted", text: prefix + " " }) : null, input]),
+    ]);
+  }
+  function creditColumn(kind, title, hint) {
+    return el("div", { class: "credit-col" }, [
+      el("h3", { text: title }), el("p", { class: "muted small", text: hint }),
+      numberField("Minimum credit score", "", kind, "minScore"),
+      numberField("Minimum financing offered", "", kind, "minOfferAmount", "$"),
+      numberField("Minimum yearly income", "", kind, "minIncome", "$"),
     ]);
   }
   function switchRow(label, hint, checked, onChange) {
@@ -361,21 +371,15 @@
       box.appendChild(card);
     });
 
-    var applies = el("select", { "aria-label": "Who the credit rules apply to" }, [
-      el("option", { value: "all", text: "Everyone who is checked" }),
-      el("option", { value: "financing", text: "Only leads who will use financing" }),
-    ]);
-    applies.value = rules.credit.appliesTo;
-    applies.addEventListener("change", function () { rules.credit.appliesTo = applies.value; state.dirty = true; });
     box.appendChild(el("div", { class: "card" }, [
       el("h2", { text: "Credit check" }),
-      el("p", { class: "muted small", text: "With any rule below switched on, the survey waits for the soft credit check before showing the calendar (usually a few seconds, 10 at most). If the check cannot run or does not answer in time, the lead is let through." }),
-      el("div", { class: "field" }, [el("div", { text: "Apply these rules to" }), applies]),
-      numberField("Minimum credit score", "Disqualify anyone scoring below this.", "minScore"),
-      numberField("Minimum financing offered", "Disqualify anyone approved for less than this, or for nothing. People with no credit file are the switch below.", "minOfferAmount", "$"),
-      numberField("Minimum yearly income", "Disqualify anyone whose estimated income is below this.", "minIncome", "$"),
-      switchRow("No credit file found", "The check ran but could not find a credit file for the person.", rules.credit.noScore, function (on) { rules.credit.noScore = on; }),
-      switchRow("Credit file is frozen", "", rules.credit.creditFreeze, function (on) { rules.credit.creditFreeze = on; }),
+      el("p", { class: "muted small", text: "Each capital answer has its own floors. A lead below a floor in its column is disqualified; an empty field is off. With any rule on, the check starts as soon as the phone is entered and routing waits for it (10 seconds at most); if the check cannot run or does not answer in time, the lead is let through. \"Minimum financing offered\" is the largest loan SimpleCheck's lender model would approve — nothing offered counts as $0. People with no credit file are the switch below." }),
+      el("div", { class: "credit-cols" }, [
+        creditColumn("cash", "Said they have the $20,000", "Yes, I have $20,000+ available right now."),
+        creditColumn("financing", "Said they will use financing", "Yes, I will use financing."),
+      ]),
+      switchRow("No credit file found", "The check ran but could not find a credit file for the person. Applies to both answers.", rules.credit.noScore, function (on) { rules.credit.noScore = on; }),
+      switchRow("Credit file is frozen", "Applies to both answers.", rules.credit.creditFreeze, function (on) { rules.credit.creditFreeze = on; }),
     ]));
 
     var save = el("button", { type: "button", class: "btn primary", text: "Save rules" });
