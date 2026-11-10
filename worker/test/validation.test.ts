@@ -22,6 +22,14 @@ test("a real-looking lead processes", () => {
   assert.deepEqual(classifyFullSubmission(good), { outcome: "process" });
 });
 
+test("a one-word name is rejected with a message (the credit check needs first and last)", () => {
+  assert.deepEqual(classifyFullSubmission({ ...good, name: "Marcus" }), { outcome: "reject", error: "Please enter your first and last name." });
+  assert.deepEqual(classifyFullSubmission({ ...good, name: "  Marcus   " }), { outcome: "reject", error: "Please enter your first and last name." });
+  assert.deepEqual(classifyFullSubmission({ ...good, name: "Marcus T" }), { outcome: "process" });
+  // the partial save still takes whatever is there
+  assert.equal(classifyPartialSubmission({ ...good, name: "Marcus" }).outcome, "process");
+});
+
 test("the DQ capital answer still processes (routing decides, not the gate)", () => {
   assert.deepEqual(classifyFullSubmission({ ...good, capital: "No, I do not qualify to book a call." }), { outcome: "process" });
 });

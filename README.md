@@ -53,8 +53,8 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
   `doppler setup --no-interactive` once per clone). The Worker itself reads `wrangler secret put` values, not Doppler;
   Doppler is for scripts and previews run from the laptop (`doppler run -- ...`). Never print values (`doppler secrets --only-names`).
 - Dev: `cd worker && npm install && npm test && npm run typecheck`; `npx wrangler dev --local --port 8787`
-  (add `--var "ALLOWED_COUNTRIES:US,CA,<your country>"` when testing from outside US/CA, the geo gate
-  silently drops everything else); deploy with `npm run deploy`, migrations with `npm run migrate`.
+  (add `--var "ALLOWED_COUNTRIES:US,<your country>"` when testing from outside the US — the geo gate is US only
+  since 2026-11-10 and silently drops everything else); deploy with `npm run deploy`, migrations with `npm run migrate`.
 
 Logs mask names, phones and emails.
 
