@@ -154,6 +154,11 @@ input.search{flex:1;min-width:240px;max-width:420px;border:1px solid var(--borde
 .inline-edit input[disabled],.inline-edit select[disabled]{opacity:.5}
 .inline-edit .actions{display:flex;gap:6px}
 .bad-text{color:#b42318}
+/* Rules → Credit check: one column per capital answer. */
+.credit-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin:12px 0 4px}
+.credit-col{border:1px solid var(--border);border-radius:10px;padding:4px 14px 10px}
+.credit-col h3{font-size:14px;font-weight:600;color:var(--heading);margin:10px 0 2px}
+.credit-col>.small{margin:0 0 6px}
 table.appts{font-size:14px}
 table.appts th{height:40px;font-size:12px;font-weight:500;color:var(--muted);text-transform:none;padding:0 12px}
 table.appts td{padding:8px 12px;vertical-align:top}

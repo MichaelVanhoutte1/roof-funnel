@@ -498,6 +498,18 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
     // (2026-11-10): the disclosure under the phone field is the consent, whether or not Continue was pressed.
     if (answersQualify(rules, answers) && !turnedAwayBefore && creditCheckEnabled(env)) {
       credit = creditFlow(env, row, meta, { consent: true, qualified: true });
+      if (creditRulesApply(rules, answers)) {
+        // A credit rule applies: the team, GHL and the "qualified" ad event hear about this lead only once the
+        // result is in and passes (Michael, 2026-11-10: qualified means the credit rule too). No result in time =
+        // the lead counts, as routing would.
+        const outcome = await Promise.race([credit, new Promise<null>((resolve) => setTimeout(() => resolve(null), CREDIT_ROUTING_WAIT_MS))]);
+        const result = outcome?.result ?? null;
+        const broken = result?.status === "success" ? creditDqReason(rules, result, answers) : null;
+        if (broken) {
+          dqReason = broken;
+          console.log(`[${tag}] lead`, row.id, "held back by a credit rule");
+        }
+      }
     }
   } else {
     // Soft credit check. It never fails the submit; the consent flag was only accepted from our own pages.
@@ -515,7 +527,7 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
       }
       // A resubmit (with or without the consent flag) is judged on the result already stored for this person.
       if (!result) result = await storedCreditFor(env, row).catch(() => null);
-      const broken = result?.status === "success" ? creditDqReason(rules, result) : null;
+      const broken = result?.status === "success" ? creditDqReason(rules, result, answers) : null;
       if (broken) {
         dqReason = broken;
         console.log(`[${tag}] lead`, row.id, "disqualified by a credit rule");
@@ -530,7 +542,7 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
 
   ctx.waitUntil(pushToGhl(env, row));
   // Qualified = sent to the calendar (completed) / nothing disqualifying among the answers so far (partial).
-  const isQualified = partial ? answersQualify(rules, answers) && !turnedAwayBefore : dqReason === null;
+  const isQualified = partial ? answersQualify(rules, answers) && !turnedAwayBefore && dqReason === null : dqReason === null;
   const contactSynced = syncLeadContact(env, row, timezone, isQualified);
   ctx.waitUntil(contactSynced);
   const leadFields = {
@@ -1017,8 +1029,12 @@ async function handleEvent(request: Request, env: Env, ctx: ExecutionContext): P
     // Qualified needs answers that pass the rules (capital answered, nothing disqualifying) and an email on file.
     const rules = await loadRules(env.DB);
     const given = (k: string): string | undefined => (typeof fields[k] === "string" ? (fields[k] as string) : undefined);
-    const passes = answersQualify(rules, { timeline: given("timeline"), business_owner: given("business_owner"), capital: given("capital") });
+    const answers = { timeline: given("timeline"), business_owner: given("business_owner"), capital: given("capital") };
+    const passes = answersQualify(rules, answers);
     if (!passes || !fields.email) return json({ ok: true, silent: true }, 200, cors);
+    // With a credit rule on, "qualified" is only ever sent by the lead save, after the check (this email-only
+    // fallback has no phone and so no result to judge).
+    if (creditRulesApply(rules, answers) && creditCheckEnabled(env)) return json({ ok: true, silent: true }, 200, cors);
     fields.qualified = true;
   }
   const payload = eventPayload(event, fields, pickTracking(raw.tracking), country);
@@ -1104,7 +1120,7 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
         `SELECT credit_status, ${CREDIT_RESULT_COLUMNS.join(", ")} FROM leads WHERE id = ?1`,
       ).bind(lead.id).first<CreditColumns & { credit_status: string | null }>();
       const stored_result = stored && stored.credit_status === "success" ? creditFromColumns(stored) : null;
-      const broken = stored_result && stored_result.status === "success" ? creditDqReason(rules, stored_result) : null;
+      const broken = stored_result && stored_result.status === "success" ? creditDqReason(rules, stored_result, { capital: lead.capital }) : null;
       if (broken) {
         await storeRoute(env, lead.id, broken);
         console.log("[book] lead", lead.id, "refused: a credit rule is broken");
