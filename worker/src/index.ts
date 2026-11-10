@@ -35,6 +35,7 @@ import { answerDqReason, answersQualify, creditDqReason, creditRulesApply, publi
 import { lookupPhone, phoneLookupConfig, type LineType, type PhoneLookup } from "./phone-lookup.ts";
 import { handleAdmin, loadRules } from "./admin.ts";
 import { runOutcomeSync } from "./outcomes.ts";
+import { eventPayload, MILESTONE_COLUMNS, milestonePayload, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap, type MilestoneRow, type Tracking } from "./cortana.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -43,7 +44,7 @@ export interface Env {
   DB: D1Database;
   RL_MINUTE?: RateLimitBinding;
   RL_EVENTS?: RateLimitBinding;
-  /** JSON map of event name → webhook URL (Cortana). */
+  /** JSON map of event name → webhook URL (Cortana): survey steps and stage milestones, see cortana.ts. */
   CORTANA_WEBHOOKS?: string;
   ALLOWED_ORIGINS: string;
   ALLOWED_COUNTRIES: string;
@@ -93,8 +94,8 @@ const CREDIT_CONSENT_VERSION = "soft-pull-v1";
  * If the check is not back by then the lead is let through to the calendar (it still finishes in the background).
  */
 const CREDIT_ROUTING_WAIT_MS = 10_000;
-
-type Tracking = Record<string, string | number | undefined>;
+/** The second cron in wrangler.toml, verbatim (Workers hand the matching expression to scheduled()). */
+const CORTANA_CRON = "5-55/10 * * * *";
 
 type Body = LeadInput & {
   survey_partial?: boolean;
@@ -732,46 +733,6 @@ async function handleEmailCapture(request: Request, env: Env, ctx: ExecutionCont
 const EVENT_FIELDS = ["session_id", "city", "timeline", "business_owner", "capital", "name", "email", "phone", "question_key", "question", "answer"] as const;
 const EVENT_NAMES = new Set(["q1", "q2", "q3", "q4", "q5", "email", "phone", "qualified"]);
 
-function webhookMap(env: Env): Record<string, string> {
-  try {
-    const m = JSON.parse(env.CORTANA_WEBHOOKS ?? "{}") as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(m)) if (typeof v === "string" && /^https:\/\//.test(v)) out[k] = v;
-    return out;
-  } catch { return {}; }
-}
-
-/** The lead at the top level of the body (Cortana reads it there), plus flattened tracking. */
-function eventPayload(event: string, fields: Record<string, unknown>, tracking: Tracking | undefined, country: string | null) {
-  const name = typeof fields.name === "string" ? fields.name.trim() : "";
-  const parts = name.split(/\s+/).filter(Boolean);
-  return {
-    event,
-    timestamp: new Date().toISOString(),
-    ...fields,
-    ...(parts[0] ? { first_name: parts[0] } : {}),
-    ...(parts.length > 1 ? { last_name: parts.slice(1).join(" ") } : {}),
-    ...(country ? { ip_country: country } : {}),
-    ...(tracking ?? {}),
-  };
-}
-
-async function relayEvent(env: Env, event: string, payload: Record<string, unknown>): Promise<void> {
-  const url = webhookMap(env)[event];
-  if (!url) return;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) console.error("[event]", event, "webhook", res.status, (await res.text().catch(() => "")).slice(0, 200));
-  } catch (err) {
-    console.error("[event]", event, "webhook failed:", String(err).slice(0, 200));
-  }
-}
-
 /* ---------------- soft credit check (SimpleCheck) ---------------- */
 
 const SQL_NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -1183,9 +1144,19 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
       contactId, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString(), title,
     });
     await env.DB.prepare(
-      "UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_end = ?3, appointment_tz = ?4, ghl_contact_id = ?5, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?6",
+      `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_end = ?3, appointment_tz = ?4, ghl_contact_id = ?5,
+         booked_at = ${SQL_NOW}, updated_at = ${SQL_NOW} WHERE id = ?6`,
     ).bind(appointmentId, new Date(startMs).toISOString(), new Date(endMs).toISOString(), tz, contactId, lead.id).run();
     console.log("[book] appointment", appointmentId, "lead", lead.id, maskName(lead.name), maskPhone(phone), start, tz);
+    // Cortana's "Setter Self-booked" step, straight away (the cron pass would catch it later anyway).
+    if (webhookMap(env.CORTANA_WEBHOOKS).setter_self_booked) ctx.waitUntil((async () => {
+      try {
+        const row = await env.DB.prepare(`SELECT ${MILESTONE_COLUMNS} FROM leads WHERE id = ?1`).bind(lead.id).first<MilestoneRow>();
+        if (row) await sendMilestoneOnce(env, row.id, "setter_self_booked", milestonePayload("setter_self_booked", row));
+      } catch (err) {
+        console.error("[cortana] self-booked post failed for lead", lead.id, String(err).slice(0, 160));
+      }
+    })());
     return json({
       ok: true,
       appointment: { id: appointmentId, start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), tz, title: env.APPOINTMENT_TITLE ?? "Dealer Strategy Session", minutes },
@@ -1223,7 +1194,11 @@ export default {
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
     return json({ ok: false, error: "Not found" }, 404, corsHeaders(request, env));
   },
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runOutcomeSync(env));
+  // Two crons (wrangler.toml), each its own invocation with its own subrequest budget: the outcome sync on the
+  // half hour, the Cortana stage-milestone pass on the other minutes.
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const cortana = event.cron === CORTANA_CRON;
+    console.log("[cron]", JSON.stringify(event.cron), cortana ? "cortana milestones" : "outcome sync");
+    ctx.waitUntil(cortana ? relayMilestones(env) : runOutcomeSync(env));
   },
 } satisfies ExportedHandler<Env>;

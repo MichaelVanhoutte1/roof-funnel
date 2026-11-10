@@ -27,8 +27,14 @@ GHL_CONTACT_SYNC = "qualified"
 # GHL user email → Workspace account whose Meet calls those are (Michael's GHL login is not a roof Workspace address).
 MEET_HOST_ALIASES = '{"michael@stonesystems.io":"mike@startroofrejuvenating.com"}'
 # Cortana step webhooks, relayed server-side by POST /event (step events) and by the lead handlers
-# (phone = stored lead). Keys are the event names the survey sends.
+# (phone = stored lead). Keys are the event names the survey sends, plus the four stage milestones the cron pass
+# posts once per lead from what the outcome sync knows (worker/src/cortana.ts). A key without an https URL is
+# never posted — paste each stage's webhook URL from Cortana to switch that column on.
 CORTANA_WEBHOOKS = """{
+  "setter_self_booked": "",
+  "setter_qualified": "",
+  "setter_disqualified": "",
+  "closer_booked": "",
   "q1": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/96a483f2-5095-43f8-9a9c-239d97ddd6ea",
   "q2": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/a4b8a580-e33c-407a-ad2f-870d17d11e5f",
   "q3": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/c0a8ad4b-2e02-4909-a0d9-d42183c0d93c",
@@ -39,9 +45,11 @@ CORTANA_WEBHOOKS = """{
   "qualified": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/eb34c0b6-8aa1-4a13-bcb9-2b9c029d9a97"
 }"""
 
-# Outcome sync (GHL pipeline, setter call log, closer appointments, Fathom / Google Meet attendance).
+# 1. Outcome sync (GHL pipeline, setter call log, closer appointments, Fathom / Google Meet attendance) on the half hour.
+# 2. Cortana stage milestones every ten minutes in between (never the same minute: each run has its own subrequest
+#    budget). The second expression is matched verbatim in index.ts (CORTANA_CRON) — change both together.
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["*/30 * * * *", "5-55/10 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

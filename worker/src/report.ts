@@ -72,6 +72,11 @@ export function knownStage(stage: string | null | undefined): boolean {
   return !!stage && stage.trim().toLowerCase() in STAGE_FACTS;
 }
 
+/** The stage names (lower-case) that say `fact` about a lead, e.g. every stage from Setter Qualified onwards for toCloser. */
+export function stagesWith(fact: keyof StageFacts): string[] {
+  return Object.entries(STAGE_FACTS).filter(([, f]) => f[fact]).map(([name]) => name);
+}
+
 export type Outcome = {
   booked: boolean;
   setterShowed: boolean;
