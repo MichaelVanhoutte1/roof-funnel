@@ -414,6 +414,7 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
   if (!due.length) return { source, checked: 0, resolved: 0 };
 
   const found = new Map<number, Attendance>();
+  const roomNeverOpened = new Set<number>();
   if (sa) {
     // One token per distinct host. A host the delegation cannot act as (outside the Workspace) is logged and skipped,
     // but a conference is also listed for everyone who joined it, so the other hosts' tokens are tried next (seen live:
@@ -432,6 +433,8 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
         try {
           const participants = await meetParticipants(token, lead.closer_meet_code, lead.closer_start);
           if (participants) { found.set(lead.id, meetAttendance(participants, nowMs)); break; }
+          // The host's own account answered and has no record of the room: nobody ever opened it.
+          if (host === own) roomNeverOpened.add(lead.id);
         } catch (err) {
           console.error("[sync] Meet lookup failed for lead", lead.id, "as", maskEmail(host), errorText(err));
         }
@@ -454,6 +457,9 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
       console.error("[sync] Fathom lookup failed:", errorText(err));
     }
   }
+  // Michael's ruling (2026-11-10): a confirmed call whose room was never opened, with no recording anywhere, is a
+  // no-show. Only when the host's own account could be read (an unreadable host stays unknown, not a no-show).
+  for (const id of roomNeverOpened) if (!found.has(id)) found.set(id, { attended: "no_show", minutes: 0 });
   const statements = due.map((lead) => {
     const a = found.get(lead.id);
     return a
