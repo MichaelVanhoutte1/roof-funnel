@@ -97,6 +97,8 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
 
 - **Overview** (`report.ts`): leads, book %, setter show %, closer show %, close % and cash per booked call, per answer,
   credit band, funnel result, ad source and device.
+- The page is laid out like CSP's shell: a 256px sidebar (Sales › Leaderboard / Appointments / Lead Scoring, then Leads,
+  Rules, Sign out) and a page header with the date range; on narrow screens the sidebar slides in from a menu button.
 - **Sales Leaderboard** and **Appointments** (`sales.ts`, `assets/admin-sales.js`, `GET /admin/sales`): the same views as
   CSP's `/commission-tracker` and `/sales-appointments`, read-only. One row per appointment (setter call from the funnel,
   closer call from the closer calendars), placed in the date range by its own start time. Leaderboard per closer

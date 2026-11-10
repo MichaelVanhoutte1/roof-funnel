@@ -54,6 +54,26 @@
   }
 
   /* ---------------- formatting ---------------- */
+  /* Lucide outlines (the icons CSP's nav uses), drawn inline so the page loads nothing from a CDN. */
+  var ICONS = {
+    handshake: ["m11 17 2 2a1 1 0 1 0 3-3", "m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4", "m21 3 1 11h-2", "M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3", "M3 4h8"],
+    dollar: ["M12 2v20", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
+    calcheck: ["M8 2v4", "M16 2v4", "M3 10h18", "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "m9 16 2 2 4-4"],
+    activity: ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"],
+    users: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M16 3.13a4 4 0 0 1 0 7.75", "M22 21v-2a4 4 0 0 0-3-3.87", "M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"],
+    sliders: ["M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4"],
+    chevron: ["m6 9 6 6 6-6"],
+    logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
+  };
+  function svg(name, cls) {
+    var ns = "http://www.w3.org/2000/svg";
+    var s = document.createElementNS(ns, "svg");
+    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor");
+    s.setAttribute("stroke-width", "2"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    s.setAttribute("class", "ic" + (cls ? " " + cls : "")); s.setAttribute("aria-hidden", "true");
+    (ICONS[name] || []).forEach(function (d) { var p = document.createElementNS(ns, "path"); p.setAttribute("d", d); s.appendChild(p); });
+    return s;
+  }
   function num(n) { return (n || 0).toLocaleString("en-US"); }
   function pct(r) { return r == null ? "–" : Math.round(r * 100) + "%"; }
   function money(n) { return n == null ? "–" : "$" + Math.round(n).toLocaleString("en-US"); }
@@ -342,21 +362,34 @@
         state.error = "Sync failed: " + e.message; render();
       });
     });
-    root.appendChild(el("div", { class: "bar" }, [
-      el("h1", { text: "Lead tracking" }), el("span", { class: "grow" }), range, custom,
-      el("button", { type: "button", class: "btn", text: "Refresh", on: { click: load } }), sync,
-      el("button", { type: "button", class: "btn", text: "Sign out", on: { click: function () { setToken(""); renderLogin(); } } }),
-    ]));
-    var tabs = [["overview", "Overview"], ["leaderboard", "Sales Leaderboard"], ["appointments", "Appointments"], ["leads", "Leads"], ["rules", "Rules"]];
-    root.appendChild(el("div", { class: "tabs", role: "tablist" }, tabs.map(function (t) {
-      return el("button", { type: "button", class: "tab", role: "tab", "aria-selected": state.tab === t[0] ? "true" : "false", text: t[1], on: { click: function () {
-        if (state.dirty && state.tab === "rules" && !window.confirm("You have unsaved rule changes. Leave without saving?")) return;
-        state.tab = t[0]; render();
-      } } });
-    })));
-    if (state.error) root.appendChild(el("div", { class: "notice bad", role: "alert", text: state.error }));
-    var box = el("div", { role: "tabpanel" });
-    root.appendChild(box);
+    /* Shell like CSP's Layout: 256px sidebar (brand, nav groups, account row), page header strip, padded content. */
+    var go = function (tab) {
+      if (state.dirty && state.tab === "rules" && !window.confirm("You have unsaved rule changes. Leave without saving?")) return;
+      state.tab = tab; state.menuOpen = false; render();
+    };
+    var navItem = function (tab, label, icon, nested) {
+      return el("button", { type: "button", class: "nav-b" + (nested ? " nested" : "") + (state.tab === tab ? " active" : ""), "aria-current": state.tab === tab ? "page" : null, on: { click: function () { go(tab); } } }, [svg(icon), el("span", { text: label })]);
+    };
+    var salesOpen = state.salesOpen !== false;
+    var nav = el("nav", { class: "nav", "aria-label": "Sections" }, [
+      el("button", { type: "button", class: "nav-b group", "aria-expanded": salesOpen ? "true" : "false", on: { click: function () { state.salesOpen = !salesOpen; render(); } } }, [svg("handshake"), el("span", { class: "grow", text: "Sales" }), svg("chevron", salesOpen ? "chev open" : "chev")]),
+      salesOpen ? el("div", { class: "nav-children" }, [navItem("leaderboard", "Leaderboard", "dollar", true), navItem("appointments", "Appointments", "calcheck", true), navItem("overview", "Lead Scoring", "activity", true)]) : null,
+      navItem("leads", "Leads", "users"), navItem("rules", "Rules", "sliders"),
+    ]);
+    var sidebar = el("aside", { class: "sidebar" + (state.menuOpen ? " open" : "") }, [
+      el("div", { class: "brand" }, [el("h1", { text: "Start Roof Rejuvenating" })]),
+      nav,
+      el("div", { class: "sidebar-foot" }, [el("button", { type: "button", class: "nav-b", on: { click: function () { setToken(""); renderLogin(); } } }, [svg("logout"), el("span", { text: "Sign out" })])]),
+    ]);
+    var titles = { overview: "Lead Scoring", leaderboard: "Sales Leaderboard", appointments: "Appointments", leads: "Leads", rules: "Rules" };
+    var header = el("header", { class: "page-head" }, [
+      el("button", { type: "button", class: "btn menu", "aria-label": "Menu", text: "☰", on: { click: function () { state.menuOpen = !state.menuOpen; render(); } } }),
+      el("h2", { class: "page-title", text: titles[state.tab] || "" }),
+      el("div", { class: "page-right" }, [range, custom, el("button", { type: "button", class: "btn", text: "Refresh", on: { click: load } }), sync]),
+    ]);
+    var box = el("div", { class: "content", role: "tabpanel" });
+    if (state.error) box.appendChild(el("div", { class: "notice bad", role: "alert", text: state.error }));
+    root.appendChild(el("div", { class: "shell" }, [sidebar, el("div", { class: "main" }, [header, box])]));
     if (state.busy && !state.report) { box.appendChild(el("p", { class: "muted", text: "Loading…" })); return; }
     if (state.tab === "overview") renderOverview(box);
     else if (state.tab === "leads") renderLeads(box);
