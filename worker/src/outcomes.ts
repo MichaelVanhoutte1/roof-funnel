@@ -416,17 +416,27 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
         }
       }
     }
-  } else {
-    const meetings = await fathomMeetings(env.FATHOM_API_KEY!, new Date(nowMs - 15 * 86_400_000).toISOString(), 3);
-    for (const lead of due) {
-      const a = fathomAttendance(meetings, lead.closer_meet_code, lead.closer_start);
-      if (a) found.set(lead.id, a);
+  }
+  // Fathom for whatever Meet could not answer (or for everything when there is no Google connection): a closer who
+  // records with Fathom, or a host the delegation cannot act as, still gets a result. One page when Meet already
+  // spent most of the subrequest budget (seen live: calls hosted from an outside-Workspace account stayed unresolved).
+  const viaFathom = new Set<number>();
+  if (env.FATHOM_API_KEY && found.size < due.length) {
+    try {
+      const meetings = await fathomMeetings(env.FATHOM_API_KEY, new Date(nowMs - 15 * 86_400_000).toISOString(), sa ? 1 : 3);
+      for (const lead of due) {
+        if (found.has(lead.id)) continue;
+        const a = fathomAttendance(meetings, lead.closer_meet_code, lead.closer_start);
+        if (a) { found.set(lead.id, a); viaFathom.add(lead.id); }
+      }
+    } catch (err) {
+      console.error("[sync] Fathom lookup failed:", errorText(err));
     }
   }
   const statements = due.map((lead) => {
     const a = found.get(lead.id);
     return a
-      ? env.DB.prepare(`UPDATE leads SET closer_attended = ?1, closer_attended_source = ?2, closer_minutes = ?3, closer_checked_at = ${SQL_NOW} WHERE id = ?4`).bind(a.attended, source, a.minutes, lead.id)
+      ? env.DB.prepare(`UPDATE leads SET closer_attended = ?1, closer_attended_source = ?2, closer_minutes = ?3, closer_checked_at = ${SQL_NOW} WHERE id = ?4`).bind(a.attended, viaFathom.has(lead.id) ? "fathom" : source, a.minutes, lead.id)
       : env.DB.prepare(`UPDATE leads SET closer_checked_at = ${SQL_NOW} WHERE id = ?1`).bind(lead.id);
   });
   await runBatches(env.DB, statements);
@@ -444,8 +454,9 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
     // Budget per run (Workers free plan: 50 subrequests, D1 calls included).
     // D1 ≈ 12: pipeline ceil(contacts/50) (~3), closer batch 1, setter batch 1, ghl_users 1, setter calls 3, attendance 2, sync_status 1.
     // Fetch: pipeline <= 7, calendars <= 8 (list, <= 4 closer, <= 2 setter, users), call logs 2 per lead, attendance <= 3 with
-    // Fathom or <= 14 with Google Meet (<= 2 tokens + per lead: 1 list + <= 2 participants, then fallback 1 list + <= 2).
-    // Meet on: 7 + 8 + 4 + 14 = 33 fetch + 12 D1 = 45.
+    // Fathom or <= 15 with Google Meet (<= 2 tokens + per lead: 1 list + <= 2 participants, then fallback 1 list + <= 2,
+    // then 1 Fathom page for what Meet left unresolved).
+    // Meet on: 7 + 8 + 4 + 15 = 34 fetch + 12 D1 = 46.
     const meetOn = !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
     const callLogs = meetOn ? 2 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
