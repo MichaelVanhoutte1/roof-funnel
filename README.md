@@ -195,9 +195,10 @@ apex of `startroofrejuvenating.com` (Cloudflare, DNS-only) pointing at `michaelv
   *Workers Scripts: Edit* + *D1: Edit* on the account); the account id is in the workflow.
 - **Worker secrets:** Doppler project `roofreju-csp`, config `prd`, holds them under the Worker's own names
   (`ADMIN_TOKEN`, `GHL_PIT`, `SIMPLECHECK_API_TOKEN`, `SLACK_LEAD_ALERTS_WEBHOOK`,
-  `GOOGLE_MEET_SERVICE_ACCOUNT`, `FATHOM_API_KEY`, …) and the Doppler → Cloudflare Workers integration
-  syncs that config to `roof-funnel-api`. Add or rotate a secret in Doppler `prd` and it is on the Worker
-  within a minute; never `wrangler secret put` by hand. Config `dev` keeps the laptop-side names
-  (`ROOF_FUNNEL_*`) that the scripts read.
+  `GOOGLE_MEET_SERVICE_ACCOUNT`, `FATHOM_API_KEY`, …). The deploy job's last step downloads that config with
+  the repository secret `DOPPLER_TOKEN` (a Doppler service token for `roofreju-csp`/`prd`) and pushes it with
+  `wrangler secret bulk`, so a secret added or rotated in Doppler is on the Worker after the next merge — or
+  right away via *Actions → Worker → Run workflow*. Never `wrangler secret put` by hand. Config `dev` keeps
+  the laptop-side names (`ROOF_FUNNEL_*`) that the scripts read.
 - **Branches:** one PR per piece of work, always against `main`. A PR stacked on another branch merges
   into *that branch* when its base is not re-targeted, and nothing ships.

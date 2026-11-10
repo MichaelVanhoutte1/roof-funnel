@@ -2,7 +2,8 @@
 #  - every pull request: typecheck + unit tests (blocks the merge when red);
 #  - every push to main that touches worker/: the same checks, then D1 migrations, then `wrangler deploy`.
 # The static site (admin page included) is GitHub Pages from main, so it ships on the same merge without a step here.
-# Worker secrets are NOT set here: Doppler (project roofreju-csp, config prd) syncs them to the Worker directly.
+# Worker secrets come from Doppler (project roofreju-csp, config prd) in the last deploy step, so a secret added or
+# rotated there reaches the Worker on the next merge (or a manual run from the Actions tab).
 name: Worker
 
 on:
@@ -55,3 +56,14 @@ jobs:
       # Migrations first: the old code tolerates new columns, the new code may need them.
       - run: npx wrangler d1 migrations apply roof-funnel-leads --remote
       - run: npx wrangler deploy
+      # Worker secrets = Doppler roofreju-csp / prd (the Worker's own names). Needs repo secret DOPPLER_TOKEN
+      # (a Doppler service token with read access to that config); skipped until it exists.
+      - name: Sync Worker secrets from Doppler
+        if: ${{ secrets.DOPPLER_TOKEN != '' }}
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
+          doppler secrets download --no-file --format json \
+            | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps({k:v for k,v in d.items() if not k.startswith("DOPPLER_")}))' \
+            | npx wrangler secret bulk
