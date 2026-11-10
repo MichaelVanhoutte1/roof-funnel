@@ -101,7 +101,7 @@ async function setOutcome(db: D1Database, id: number, body: Record<string, unkno
   return r.meta.changes ? null : "lead not found";
 }
 
-type LeadListRow = ReportLead & { id: number; created_at: string; name: string | null; city: string | null; closer_attended_source: string | null };
+type LeadListRow = ReportLead & { id: number; created_at: string; name: string | null; city: string | null; closer_attended_source: string | null; phone_line_type: string | null };
 
 export async function handleAdmin(request: Request, env: AdminEnv, path: string, cors: Record<string, string>, json: Json): Promise<Response> {
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -150,13 +150,13 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
 
   if (request.method === "GET" && path === "/admin/leads") {
     const { results } = await env.DB.prepare(
-      `SELECT id, created_at, name, city, closer_attended_source, ${REPORT_COLUMNS} FROM leads
+      `SELECT id, created_at, name, city, closer_attended_source, phone_line_type, ${REPORT_COLUMNS} FROM leads
        WHERE created_at >= ?1 AND created_at < ?2 ORDER BY id DESC LIMIT 500`,
     ).bind(from, to).all<LeadListRow>();
     const leads = results.map((l) => {
       const o = leadOutcome(l, nowIso);
       return {
-        id: l.id, created_at: l.created_at, name: l.name, city: l.city, status: l.status, route: l.route, dq_reason: l.dq_reason,
+        id: l.id, created_at: l.created_at, name: l.name, city: l.city, phone_line_type: l.phone_line_type, status: l.status, route: l.route, dq_reason: l.dq_reason,
         timeline: l.timeline, business_owner: l.business_owner, capital: l.capital,
         credit_status: l.credit_status, credit_score: l.credit_score, credit_offer: l.credit_offer_amount_1,
         appointment_start: l.appointment_start, pipeline_stage: l.pipeline_stage,

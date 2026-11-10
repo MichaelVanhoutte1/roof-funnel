@@ -262,6 +262,13 @@
     return el("span", { text: (l.credit_score == null ? "No file" : String(l.credit_score)) + (l.credit_offer ? " · " + l.credit_offer : "") });
   }
   function shortCapital(v) { return !v ? "–" : /financing/i.test(v) ? "Financing" : /^Yes/.test(v) ? "Has $20k" : "No capital"; }
+  /* Carrier lookup of the phone (Twilio): only the types worth a second look get a pill. */
+  function lineTypePill(t) {
+    if (t === "fixedVoip" || t === "nonFixedVoip") return pill("VoIP number", "warn");
+    if (t === "landline") return pill("Landline");
+    if (t === "invalid") return pill("Unassigned number", "bad");
+    return null;
+  }
 
   /* Leads tab filters (Michael, 2026-11-10: "I can't filter the leads"). Client-side over the loaded rows. */
   var LEAD_FILTERS = {
@@ -306,7 +313,7 @@
     var rows = leads.map(function (l) {
       var left = function (child) { return el("td", { class: "left" }, [child]); };
       return el("tr", null, [
-        el("td", null, [el("div", { text: l.name || "(no name)" }), el("div", { class: "muted small", text: l.city || "" })]),
+        el("td", null, [el("div", { text: l.name || "(no name)" }), el("div", { class: "muted small", text: l.city || "" }), lineTypePill(l.phone_line_type)]),
         left(document.createTextNode(day(l.created_at))),
         left(document.createTextNode(shortCapital(l.capital))),
         left(document.createTextNode(l.timeline || "–")),
