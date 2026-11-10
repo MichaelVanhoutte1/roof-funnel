@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fathomAttendance, latestOpportunityPerContact, meetAttendance, meetCode, pickCloserEvents, summarizeCalls } from "../src/outcomes.ts";
+import { fathomAttendance, hostSubject, latestOpportunityPerContact, meetAttendance, meetCode, pickCloserEvents, summarizeCalls } from "../src/outcomes.ts";
+
+test("hostSubject maps a GHL host email to its Workspace alias, case-insensitively, and ignores bad config", () => {
+  const aliases = '{"Michael@StoneSystems.io":"mike@startroofrejuvenating.com"}';
+  assert.equal(hostSubject("michael@stonesystems.io", aliases), "mike@startroofrejuvenating.com");
+  assert.equal(hostSubject("calvin@startroofrejuvenating.com", aliases), "calvin@startroofrejuvenating.com");
+  assert.equal(hostSubject("michael@stonesystems.io", undefined), "michael@stonesystems.io");
+  assert.equal(hostSubject("michael@stonesystems.io", "not json"), "michael@stonesystems.io");
+  assert.equal(hostSubject("michael@stonesystems.io", '{"michael@stonesystems.io": 5}'), "michael@stonesystems.io");
+});
 
 test("summarizeCalls counts call records and keeps the longest completed one", () => {
   const r = summarizeCalls([
