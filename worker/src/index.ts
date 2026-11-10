@@ -434,7 +434,9 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   // The lead is stored. Everything else is registered up front, so it finishes even if the visitor closes the
   // tab while a credit rule is still waiting on the check.
   const origin = request.headers.get("Origin");
-  const consent = !partial && str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin);
+  // Sent by the full submit and by the phone step's save (the survey asks the timeline question last so the check
+  // runs meanwhile); an abandonment save never carries it.
+  const consent = str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin);
   const settle = settleLead(env, ctx, { row, meta, partial, rules, answers, answerDq, consent, tracking, country, tag });
   ctx.waitUntil(settle.catch(() => {}));
   let dqReason = answerDq;
@@ -491,6 +493,11 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
   if (partial) {
     // An abandoned retry by someone the credit rules already turned away is not a qualified lead again.
     if (answersQualify(rules, answers)) turnedAwayBefore = await creditDisqualifiedBefore(env, row.phone);
+    // The phone step's save: start the soft credit check now, so the full submit a few seconds later finds the
+    // result on the row and routes without waiting. Only for a lead the answers so far keep qualified.
+    if (s.consent && answersQualify(rules, answers) && !turnedAwayBefore && creditCheckEnabled(env)) {
+      credit = creditFlow(env, row, meta, { consent: true, qualified: true });
+    }
   } else {
     // Soft credit check. It never fails the submit; the consent flag was only accepted from our own pages.
     credit = creditFlow(env, row, meta, { consent: s.consent, qualified: dqReason === null });
@@ -794,6 +801,17 @@ async function storedCreditResult(env: Env, rowId: number, identity: string): Pr
   return r && r.credit_status === "success" ? creditFromColumns(r) : null;
 }
 
+/** The stored result, waiting up to `maxMs` while a check started by an earlier request is still 'pending'. */
+async function settledCreditResult(env: Env, rowId: number, identity: string, maxMs: number): Promise<CreditResult | null> {
+  const until = Date.now() + maxMs;
+  for (;;) {
+    const r = await env.DB.prepare("SELECT credit_status FROM leads WHERE id = ?1 AND credit_identity = ?2").bind(rowId, identity).first<{ credit_status: string | null }>();
+    if (r?.credit_status !== "pending" || Date.now() >= until) break;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return storedCreditResult(env, rowId, identity);
+}
+
 async function storedCreditFor(env: Env, row: LeadRow): Promise<CreditResult | null> {
   return storedCreditResult(env, row.id, await identityKey(row.name, row.email, row.phone));
 }
@@ -848,8 +866,9 @@ async function creditCheckOnce(env: Env, row: LeadRow, meta: Meta, identity: str
     `UPDATE leads SET credit_checked_at = ${SQL_NOW}, credit_status = 'pending', credit_error = NULL
      WHERE id = ?1 AND credit_checked_at IS NULL AND credit_consent = ?2 AND credit_identity = ?3`,
   ).bind(row.id, CREDIT_CONSENT_VERSION, identity).run();
-  // Already checked (or in flight) for this person on this row: hand back what is stored, if anything.
-  if ((claim.meta.changes ?? 0) === 0) return { result: await storedCreditResult(env, row.id, identity), fresh: false };
+  // Already checked (or in flight) for this person on this row: hand back what is stored, if anything. A check the
+  // phone step started may still be running when the full submit arrives: wait for it, briefly.
+  if ((claim.meta.changes ?? 0) === 0) return { result: await settledCreditResult(env, row.id, identity, CREDIT_ROUTING_WAIT_MS), fresh: false };
 
   let result: CreditResult;
   if (meta.country && meta.country !== "US") {

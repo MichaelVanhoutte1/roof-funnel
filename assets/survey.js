@@ -3,8 +3,10 @@
  *
  * Mount: <div id="dealer-survey" data-api="https://api.example.com" data-calendar="<GHL booking widget URL>">
  *
- * Flow: 3 tap questions → city → phone → email → name → POST /lead → calendar (GHL) | not-a-fit | thanks.
- * Partial save (POST /lead/partial) once a valid phone exists and the visitor leaves or idles.
+ * Flow: city → owner → capital → name → email → phone → timeline → POST /lead → calendar | not-a-fit | thanks.
+ * The phone step's Continue saves the lead (POST /lead/partial with the credit-check consent) so the soft credit check
+ * runs while the visitor answers the timeline question; the final submit then finds the result already stored.
+ * Abandonment: the same partial save, without consent, once a valid phone exists and the visitor leaves or idles.
  */
 (function () {
   "use strict";
@@ -17,13 +19,11 @@
   var THANKYOU_URL = mount.getAttribute("data-thankyou") || "/thankyou-page/";
   var HONEYPOT_FIELD = "contact_fax";
   var PREVIEW = /[?&]sv_preview=calendar/.test(window.location.search);
-  /* Version of the soft credit check disclosure shown under the submit button; sent with a full submit only. */
+  /* Version of the soft credit check disclosure shown under the phone step's button; sent with the phone step's save and the full submit. */
   var CREDIT_CONSENT = "soft-pull-v1";
 
   var STEPS = [
     { key: "city", type: "text", q: "What city are you located in?", placeholder: "e.g. Tampa, FL", autocomplete: "address-level2", aria: "Your city" },
-    { key: "timeline", type: "choice", q: "How soon are you planning to become a dealer/applicator in your city?",
-      options: ["Right away", "Within 30 days", "More than 30 days"], aria: "Timeline" },
     { key: "business_owner", type: "choice", q: "Are you currently a business owner or looking to start one?",
       options: ["I own a business", "I want to start one"], aria: "Business owner" },
     { key: "capital", type: "choice",
@@ -31,10 +31,13 @@
       options: ["Yes, I have $20,000+ available right now.", "Yes, I will use financing.", "No, I do not qualify to book a call."], aria: "Capital" },
     { key: "name", type: "text", q: "What is your full name?", placeholder: "First and last name", autocomplete: "name", aria: "Your name" },
     { key: "email", type: "email", q: "What is your email?", placeholder: "you@example.com", autocomplete: "email", aria: "Your email" },
-    { key: "phone", type: "tel", q: "What is your personal phone number?", placeholder: "(555) 123-4567", autocomplete: "tel-national", aria: "Your mobile phone", submit: true },
+    { key: "phone", type: "tel", q: "What is your personal phone number?", placeholder: "(555) 123-4567", autocomplete: "tel-national", aria: "Your mobile phone" },
+    /* Last on purpose: the credit check started at the phone step finishes while this is answered. */
+    { key: "timeline", type: "choice", q: "How soon are you planning to become a dealer/applicator in your city?",
+      options: ["Right away", "Within 30 days", "More than 30 days"], aria: "Timeline", submit: true },
   ];
   var TOTAL = STEPS.length;
-  var PHONE_STEP = 6;
+  var PHONE_STEP = 5;
   var ENDOWED_PROGRESS = [50, 60, 70, 78, 86, 92, 98];
   var AUTO_ADVANCE_MS = 250;
   var SURVEY_ABANDON_MS = 300000;
@@ -192,11 +195,19 @@
         list.appendChild(b);
       });
       slide.appendChild(list);
+      if (s.submit) {
+        var status = el("p", { class: "sv-status", role: "status", "aria-live": "polite" });
+        refs.status = status;
+        slide.appendChild(status);
+        var cerr = el("p", { class: "sv-error", role: "alert", id: "sv-" + s.key + "-error" });
+        refs.errors[s.key] = cerr;
+        slide.appendChild(cerr);
+      }
     } else {
       var input = el("input", {
         id: "sv-" + s.key, name: s.key, type: s.type === "tel" ? "tel" : s.type, class: "sv-field",
         placeholder: s.placeholder, autocomplete: s.autocomplete, enterkeyhint: "done",
-        maxlength: s.type === "tel" ? "14" : undefined, pattern: s.type === "tel" ? "[0-9()\\- ]*" : undefined,
+        maxlength: s.type === "tel" ? "14" : undefined, pattern: s.type === "tel" ? "[0-9() -]*" : undefined,
         inputmode: s.type === "tel" ? "numeric" : s.type === "email" ? "email" : undefined, "aria-label": s.aria,
       });
       if (s.type === "tel") {
@@ -220,8 +231,8 @@
       var err = el("p", { class: "sv-error", role: "alert", id: "sv-" + s.key + "-error" });
       refs.errors[s.key] = err;
       slide.appendChild(err);
-      slide.appendChild(el("button", { type: "submit", class: "sv-cta", text: s.submit ? "Check My Eligibility" : "Continue" }));
-      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", html: 'By submitting, you agree to our <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a>, including a soft credit check to pre-qualify you. It won\'t affect your credit score.' }));
+      slide.appendChild(el("button", { type: "submit", class: "sv-cta", text: "Continue" }));
+      if (s.type === "tel") slide.appendChild(el("p", { class: "sv-hint", html: 'By continuing, you agree to our <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a>, including a soft credit check to pre-qualify you. It won\'t affect your credit score.' }));
     }
     track.appendChild(slide);
   });
@@ -292,6 +303,7 @@
     advanceTimer = setTimeout(function () {
       state.advancing = false;
       refs.choices[key].forEach(function (b) { b.disabled = false; });
+      if (STEPS[idx].submit) { submitSurvey(); return; } // the last question: the answer is the submit
       goTo(idx + 1);
       focusStep(idx + 1);
     }, AUTO_ADVANCE_MS);
@@ -328,13 +340,16 @@
     return p;
   }
 
-  function sendPartial(force) {
+  /* withConsent: the visitor pressed Continue on the phone step under the credit-check disclosure, so the API may
+     start the soft credit check now. Abandonment saves never carry it. */
+  function sendPartial(force, withConsent) {
     if (partialSent || fullSent || state.submitting) return; /* the full submit is on its way (it can take ~10 s) */
     var c = readContact();
     if (!c.phone || c.digits.length !== 10) return;
     if (!force && Date.now() - phoneEditedAt < PHONE_SETTLE_MS) return;
     var body = payloadBase();
     body.survey_partial = true;
+    if (withConsent) body.credit_consent = CREDIT_CONSENT;
     try {
       fetch(API + "/lead/partial", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true })
         .then(function (r) { if (r.ok) { partialSent = true; partialPhone = c.phone; } }).catch(function () {});
@@ -444,15 +459,19 @@
     }
     if (s.key === "phone") {
       if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); return; }
-      setError("phone", ""); submitSurvey(); return;
+      setError("phone", "");
+      // Save the lead now, with consent: the API starts the credit check while the last question is answered.
+      if (!PREVIEW) sendPartial(true, true);
+      goTo(state.step + 1); return;
     }
   });
 
   /* ---------------- final submit + routing ---------------- */
+  var lastKey = STEPS[TOTAL - 1].key;
   function setSubmitting(on) {
     state.submitting = on;
-    var btn = track.lastElementChild.querySelector(".sv-cta");
-    if (btn) { btn.disabled = on; btn.textContent = on ? "Submitting…" : "Check My Eligibility"; }
+    (refs.choices[lastKey] || []).forEach(function (b) { b.disabled = on; });
+    if (refs.status) refs.status.textContent = on ? "Checking your eligibility…" : "";
   }
 
   function submitSurvey() {
@@ -460,6 +479,7 @@
     if (!c.phone) { setError("phone", "Enter a valid 10-digit phone number"); goTo(PHONE_STEP); return; }
     if (!state.answers.timeline || !state.answers.business_owner || !state.answers.capital) { goTo(0); return; }
     if (PREVIEW) { fullSent = true; clearAbandonTimer(); startBooking(c); return; }
+    setError(lastKey, "");
     setSubmitting(true);
     var body = payloadBase();
     body.credit_consent = CREDIT_CONSENT;
@@ -472,7 +492,10 @@
         if (!r.res.ok) {
           var msg = typeof r.data.error === "string" ? r.data.error
             : r.res.status === 429 ? "Too many submissions. Please wait a moment and try again." : "Something went wrong. Please try again.";
-          setError("phone", msg);
+          // A rejected phone or email is fixed on its own step; anything else is shown under the last question.
+          if (/phone/i.test(msg)) { setError("phone", msg); goTo(PHONE_STEP); focusStep(PHONE_STEP); }
+          else if (/email/i.test(msg)) { setError("email", msg); goTo(PHONE_STEP - 1); focusStep(PHONE_STEP - 1); }
+          else setError(lastKey, msg);
           return;
         }
         fullSent = true; clearAbandonTimer();
@@ -480,7 +503,7 @@
         else if (r.data.route === "dq") showPanel(r.data.dq === "capital" || !r.data.dq ? "dq" : "nofit", c);
         else startBooking(c);
       })
-      .catch(function () { setError("phone", "Something went wrong. Please try again."); })
+      .catch(function () { setError(lastKey, "Something went wrong. Please try again."); })
       .then(function () { setSubmitting(false); });
   }
 

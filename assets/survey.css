@@ -50,6 +50,8 @@
 .sv-field.is-error,.sv-field.is-error:focus{border-color:var(--sv-error);box-shadow:0 0 0 3px rgba(255,107,107,.2)}
 .sv-error{margin:8px 0 0;text-align:center;font-size:14px;color:var(--sv-error)}
 .sv-error:empty{display:none}
+.sv-status{margin:12px 0 0;text-align:center;font-size:14px;color:var(--sv-muted)}
+.sv-status:empty{display:none}
 .sv-cta{margin-top:16px;width:100%;border:0;border-radius:12px;background:var(--sv-primary);padding:12px 16px;font:inherit;font-size:16px;font-weight:800;color:#fff;cursor:pointer;box-shadow:0 8px 24px rgba(14,127,166,.25);transition:background-color .15s,transform .15s,box-shadow .15s}
 @media(min-width:640px){.sv-cta{padding:14px 16px;font-size:18px}}
 .sv-cta:hover{background:var(--sv-dark);transform:translateY(-1px);box-shadow:0 8px 30px rgba(14,127,166,.3)}
