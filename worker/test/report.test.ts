@@ -27,9 +27,12 @@ test("the GHL appointment status is a witness: showed / noshow marked by hand co
   assert.equal(leadOutcome(booked({ appointment_status: "noshow", pipeline_stage: "Setter Booked" }), NOW).setterNoShow, true);
   const c = leadOutcome(lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "showed", pipeline_stage: "Closer Booked" }), NOW);
   assert.deepEqual([c.closerShowed, c.closerNoShow], [true, false]);
-  // measured attendance beats the hand-set status
+  // a hand-set "showed" is a positive witness too: a Meet no-show (closer alone in the room) does not undo it
   const m = leadOutcome(lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "showed", closer_attended: "no_show", pipeline_stage: "Closer Booked" }), NOW);
-  assert.deepEqual([m.closerShowed, m.closerNoShow], [false, true]);
+  assert.deepEqual([m.closerShowed, m.closerNoShow], [true, false]);
+  // with no positive witness at all, the measured no-show decides
+  const n = leadOutcome(lead({ closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z", closer_status: "confirmed", closer_attended: "no_show", pipeline_stage: "Closer Booked" }), NOW);
+  assert.deepEqual([n.closerShowed, n.closerNoShow], [false, true]);
 });
 
 test("setter no-show needs a past call with no conversation and either the stage or call attempts", () => {
@@ -52,7 +55,9 @@ test("closer attendance from Fathom / Meet beats the pipeline stage; the stage i
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Followup" }), NOW)), { toCloser: true, closerShowed: true, closerNoShow: false });
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Booked Noshow" }), NOW)), { toCloser: true, closerShowed: false, closerNoShow: true });
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Booked", closer_attended: "showed" }), NOW)), { toCloser: true, closerShowed: true, closerNoShow: false });
-  assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Followup", closer_attended: "no_show" }), NOW)), { toCloser: true, closerShowed: false, closerNoShow: true });
+  // A card moved to Followup is a human saying the call happened; a Meet no-show alone does not undo it.
+  assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Followup", closer_attended: "no_show" }), NOW)), { toCloser: true, closerShowed: true, closerNoShow: false });
+  assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Booked Noshow", closer_attended: "showed" }), NOW)), { toCloser: true, closerShowed: true, closerNoShow: false });
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Setter Booked", closer_appointment_id: "c1" }), NOW)), { toCloser: true, closerShowed: false, closerNoShow: false });
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Booked" }), NOW)), { toCloser: true, closerShowed: false, closerNoShow: false });
 });

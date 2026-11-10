@@ -106,10 +106,12 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const setterNoShow = booked && past && !talked && (stage.setterNoShow || ghlSetter === "noshow" || (l.setter_calls ?? 0) > 0);
   const toCloser = stage.toCloser || won || !!l.closer_appointment_id;
   const closerBooked = stage.closerBooked || won || !!l.closer_appointment_id;
-  const closerKnown = l.closer_attended === "showed" || l.closer_attended === "no_show";
   const ghlCloser = (l.closer_status ?? "").toLowerCase();
-  const closerShowed = won || (closerKnown ? l.closer_attended === "showed" : stage.closerShowed || ghlCloser === "showed");
-  const closerNoShow = !closerShowed && (closerKnown ? l.closer_attended === "no_show" : stage.closerNoShow || ghlCloser === "noshow");
+  // Any positive witness wins: a Meet/Fathom record of the prospect, a card moved to Followup/Won, or a hand-set
+  // GHL status. A Meet "no_show" alone does not overrule a card a human moved past the call (seen live: a Closer
+  // Followup lead whose call happened off-Meet), it only decides when nobody recorded a show.
+  const closerShowed = won || l.closer_attended === "showed" || stage.closerShowed || ghlCloser === "showed";
+  const closerNoShow = !closerShowed && (l.closer_attended === "no_show" || stage.closerNoShow || ghlCloser === "noshow");
   // Booked calls with no outcome yet, split so the counts always add up to booked.
   const setterShowed = booked && talked;
   const setterOpen = booked && !setterShowed && !setterNoShow;

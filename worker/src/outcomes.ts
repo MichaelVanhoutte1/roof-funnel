@@ -31,6 +31,11 @@ export type SyncEnv = {
   FATHOM_API_KEY?: string;
   /** Google service-account key (JSON) with domain-wide delegation for meetings.space.readonly; acts as each call's host. */
   GOOGLE_MEET_SERVICE_ACCOUNT?: string;
+  /**
+   * JSON map of GHL user email → Workspace account to read that host's Meet calls as, for a closer whose GHL login
+   * is not a Workspace address (e.g. {"michael@stonesystems.io":"mike@startroofrejuvenating.com"}). Optional var.
+   */
+  MEET_HOST_ALIASES?: string;
 };
 
 export type SyncSummary = {
@@ -376,18 +381,32 @@ async function meetParticipants(accessToken: string, code: string, appointmentIs
 
 type CloserDue = { id: number; closer_meet_code: string; closer_start: string; closer_host: string | null };
 
+/** The Workspace account to read a host's Meet calls as: the alias from MEET_HOST_ALIASES when there is one, else the host itself. */
+export function hostSubject(host: string, aliasesRaw: string | undefined): string {
+  if (!aliasesRaw) return host;
+  try {
+    const map = JSON.parse(aliasesRaw) as Record<string, unknown>;
+    for (const [from, to] of Object.entries(map)) {
+      if (from.trim().toLowerCase() === host.trim().toLowerCase() && typeof to === "string" && to.includes("@")) return to.trim().toLowerCase();
+    }
+  } catch {
+    console.error("[sync] MEET_HOST_ALIASES is not a JSON object of email → email; ignored");
+  }
+  return host;
+}
+
 export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: number): Promise<{ source: "google_meet" | "fathom" | "none"; checked: number; resolved: number }> {
   const sa = parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
   if (env.GOOGLE_MEET_SERVICE_ACCOUNT && !sa) console.error("[sync] GOOGLE_MEET_SERVICE_ACCOUNT is set but is not a service-account key file; Meet attendance is off");
   const source = sa ? "google_meet" : env.FATHOM_API_KEY ? "fathom" : "none";
   if (source === "none") return { source, checked: 0, resolved: 0 };
 
-  // Closer calls that started at least 45 minutes ago, in the last 14 days, with attendance still unknown.
+  // Closer calls that started at least 45 minutes ago, in the last 28 days (Meet keeps records 30), with attendance still unknown.
   // With Meet, only calls whose host is known: the host is who the conference is read as.
   const { results: due } = await env.DB.prepare(
     `SELECT id, closer_meet_code, closer_start, closer_host FROM leads
      WHERE closer_meet_code IS NOT NULL AND closer_attended IS NULL AND IFNULL(closer_status, '') <> 'cancelled'
-       AND closer_start < strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 minutes') AND closer_start > strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days')
+       AND closer_start < strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 minutes') AND closer_start > strftime('%Y-%m-%dT%H:%M:%fZ','now','-28 days')
        AND (closer_checked_at IS NULL OR closer_checked_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 hours'))
        AND (?2 = 0 OR closer_host IS NOT NULL)
      ORDER BY closer_start DESC LIMIT ?1`,
@@ -399,12 +418,14 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
     // One token per distinct host. A host the delegation cannot act as (outside the Workspace) is logged and skipped,
     // but a conference is also listed for everyone who joined it, so the other hosts' tokens are tried next (seen live:
     // a call hosted from a @stonesystems.io account was readable as the closer who sat in on it).
+    // Tokens are keyed by the Workspace account read as (the host, or its MEET_HOST_ALIASES alias).
     const tokens = new Map<string, string | null>();
-    for (const host of new Set(due.map((l) => l.closer_host!))) {
-      try { tokens.set(host, await serviceAccountToken(sa, host, MEET_SCOPE, fetch, nowMs)); } catch (err) { tokens.set(host, null); console.error("[sync] Google token failed:", errorText(err).replace(host, maskEmail(host))); }
+    for (const subject of new Set(due.map((l) => hostSubject(l.closer_host!, env.MEET_HOST_ALIASES)))) {
+      try { tokens.set(subject, await serviceAccountToken(sa, subject, MEET_SCOPE, fetch, nowMs)); } catch (err) { tokens.set(subject, null); console.error("[sync] Google token failed:", errorText(err).replace(subject, maskEmail(subject))); }
     }
     for (const lead of due) {
-      const order = [lead.closer_host!, ...[...tokens.keys()].filter((h) => h !== lead.closer_host)];
+      const own = hostSubject(lead.closer_host!, env.MEET_HOST_ALIASES);
+      const order = [own, ...[...tokens.keys()].filter((h) => h !== own)];
       for (const host of order) {
         const token = tokens.get(host);
         if (!token) continue;
@@ -416,17 +437,27 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
         }
       }
     }
-  } else {
-    const meetings = await fathomMeetings(env.FATHOM_API_KEY!, new Date(nowMs - 15 * 86_400_000).toISOString(), 3);
-    for (const lead of due) {
-      const a = fathomAttendance(meetings, lead.closer_meet_code, lead.closer_start);
-      if (a) found.set(lead.id, a);
+  }
+  // Fathom for whatever Meet could not answer (or for everything when there is no Google connection): a closer who
+  // records with Fathom, or a host the delegation cannot act as, still gets a result. One page when Meet already
+  // spent most of the subrequest budget (seen live: calls hosted from an outside-Workspace account stayed unresolved).
+  const viaFathom = new Set<number>();
+  if (env.FATHOM_API_KEY && found.size < due.length) {
+    try {
+      const meetings = await fathomMeetings(env.FATHOM_API_KEY, new Date(nowMs - 15 * 86_400_000).toISOString(), sa ? 1 : 3);
+      for (const lead of due) {
+        if (found.has(lead.id)) continue;
+        const a = fathomAttendance(meetings, lead.closer_meet_code, lead.closer_start);
+        if (a) { found.set(lead.id, a); viaFathom.add(lead.id); }
+      }
+    } catch (err) {
+      console.error("[sync] Fathom lookup failed:", errorText(err));
     }
   }
   const statements = due.map((lead) => {
     const a = found.get(lead.id);
     return a
-      ? env.DB.prepare(`UPDATE leads SET closer_attended = ?1, closer_attended_source = ?2, closer_minutes = ?3, closer_checked_at = ${SQL_NOW} WHERE id = ?4`).bind(a.attended, source, a.minutes, lead.id)
+      ? env.DB.prepare(`UPDATE leads SET closer_attended = ?1, closer_attended_source = ?2, closer_minutes = ?3, closer_checked_at = ${SQL_NOW} WHERE id = ?4`).bind(a.attended, viaFathom.has(lead.id) ? "fathom" : source, a.minutes, lead.id)
       : env.DB.prepare(`UPDATE leads SET closer_checked_at = ${SQL_NOW} WHERE id = ?1`).bind(lead.id);
   });
   await runBatches(env.DB, statements);
@@ -444,8 +475,9 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
     // Budget per run (Workers free plan: 50 subrequests, D1 calls included).
     // D1 ≈ 12: pipeline ceil(contacts/50) (~3), closer batch 1, setter batch 1, ghl_users 1, setter calls 3, attendance 2, sync_status 1.
     // Fetch: pipeline <= 7, calendars <= 8 (list, <= 4 closer, <= 2 setter, users), call logs 2 per lead, attendance <= 3 with
-    // Fathom or <= 14 with Google Meet (<= 2 tokens + per lead: 1 list + <= 2 participants, then fallback 1 list + <= 2).
-    // Meet on: 7 + 8 + 4 + 14 = 33 fetch + 12 D1 = 45.
+    // Fathom or <= 15 with Google Meet (<= 2 tokens + per lead: 1 list + <= 2 participants, then fallback 1 list + <= 2,
+    // then 1 Fathom page for what Meet left unresolved).
+    // Meet on: 7 + 8 + 4 + 15 = 34 fetch + 12 D1 = 46.
     const meetOn = !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
     const callLogs = meetOn ? 2 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
