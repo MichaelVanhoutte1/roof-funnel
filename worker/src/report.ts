@@ -78,6 +78,17 @@ export type Outcome = {
   closerNoShow: boolean;
   won: boolean;
   cash: number;
+  /**
+   * Booked calls without a show / no-show yet, so that showed + noShow + pending + cancelled + upcoming = booked:
+   * upcoming = still ahead (or started under half an hour ago); cancelled = cancelled in GHL;
+   * pending = past, and no witness said anything (no call log, card not moved, no status, no Meet record yet).
+   */
+  setterUpcoming: boolean;
+  setterCancelled: boolean;
+  setterPending: boolean;
+  closerUpcoming: boolean;
+  closerCancelled: boolean;
+  closerPending: boolean;
 };
 
 /** Everything the report counts for one lead, as of `nowIso`. */
@@ -99,9 +110,18 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const ghlCloser = (l.closer_status ?? "").toLowerCase();
   const closerShowed = won || (closerKnown ? l.closer_attended === "showed" : stage.closerShowed || ghlCloser === "showed");
   const closerNoShow = !closerShowed && (closerKnown ? l.closer_attended === "no_show" : stage.closerNoShow || ghlCloser === "noshow");
+  // Booked calls with no outcome yet, split so the counts always add up to booked.
+  const setterShowed = booked && talked;
+  const setterOpen = booked && !setterShowed && !setterNoShow;
+  const setterCancelled = setterOpen && ghlSetter === "cancelled";
+  const setterUpcoming = setterOpen && !setterCancelled && !!l.appointment_start && !past;
+  const closerPast = !!l.closer_start && Date.parse(l.closer_start) + NO_SHOW_GRACE_MS <= Date.parse(nowIso);
+  const closerOpen = closerBooked && !closerShowed && !closerNoShow;
+  const closerCancelled = closerOpen && ghlCloser === "cancelled";
+  const closerUpcoming = closerOpen && !closerCancelled && !!l.closer_start && !closerPast;
   return {
     booked,
-    setterShowed: booked && talked,
+    setterShowed,
     setterNoShow,
     setterDq: stage.setterDq,
     toCloser,
@@ -110,6 +130,12 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
     closerNoShow,
     won,
     cash: won ? l.opportunity_value ?? 0 : 0,
+    setterUpcoming,
+    setterCancelled,
+    setterPending: setterOpen && !setterCancelled && !setterUpcoming,
+    closerUpcoming,
+    closerCancelled,
+    closerPending: closerOpen && !closerCancelled && !closerUpcoming,
   };
 }
 
@@ -126,6 +152,10 @@ export type SegmentRow = {
   noShow: number;
   /** showed ÷ (showed + noShow) */
   showRate: number | null;
+  /** Booked setter calls with no outcome yet: still ahead / cancelled in GHL / past with no witness. */
+  upcoming: number;
+  cancelled: number;
+  pending: number;
   setterDq: number;
   toCloser: number;
   closerBooked: number;
@@ -135,6 +165,10 @@ export type SegmentRow = {
   closerNoShow: number;
   /** closerShowed ÷ (closerShowed + closerNoShow) */
   closerShowRate: number | null;
+  /** Booked closer calls with no outcome yet: still ahead / cancelled in GHL / past with no witness. */
+  closerUpcoming: number;
+  closerCancelled: number;
+  closerPending: number;
   won: number;
   /** won ÷ closerShowed */
   closeRate: number | null;
@@ -146,7 +180,10 @@ export type SegmentRow = {
 type Counts = Omit<SegmentRow, "bookRate" | "showRate" | "closerBookRate" | "closerShowRate" | "closeRate" | "cashPerBooked">;
 
 function emptyCounts(label: string): Counts {
-  return { label, leads: 0, qualified: 0, booked: 0, showed: 0, noShow: 0, setterDq: 0, toCloser: 0, closerBooked: 0, closerShowed: 0, closerNoShow: 0, won: 0, cash: 0 };
+  return {
+    label, leads: 0, qualified: 0, booked: 0, showed: 0, noShow: 0, upcoming: 0, cancelled: 0, pending: 0, setterDq: 0, toCloser: 0,
+    closerBooked: 0, closerShowed: 0, closerNoShow: 0, closerUpcoming: 0, closerCancelled: 0, closerPending: 0, won: 0, cash: 0,
+  };
 }
 
 function rate(n: number, d: number): number | null {
@@ -171,11 +208,17 @@ function add(c: Counts, l: ReportLead, o: Outcome): void {
   if (o.booked) c.booked++;
   if (o.setterShowed) c.showed++;
   if (o.setterNoShow) c.noShow++;
+  if (o.setterUpcoming) c.upcoming++;
+  if (o.setterCancelled) c.cancelled++;
+  if (o.setterPending) c.pending++;
   if (o.setterDq) c.setterDq++;
   if (o.toCloser) c.toCloser++;
   if (o.closerBooked) c.closerBooked++;
   if (o.closerShowed) c.closerShowed++;
   if (o.closerNoShow) c.closerNoShow++;
+  if (o.closerUpcoming) c.closerUpcoming++;
+  if (o.closerCancelled) c.closerCancelled++;
+  if (o.closerPending) c.closerPending++;
   if (o.won) c.won++;
   c.cash += o.cash;
 }

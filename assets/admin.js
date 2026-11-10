@@ -200,8 +200,19 @@
     return details;
   }
 
-  function stat(label, value, sub) {
-    return el("div", { class: "stat" }, [el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "sub", text: sub || "" })]);
+  function stat(label, value, sub, sub2) {
+    var kids = [el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "sub", text: sub || "" })];
+    if (sub2) kids.push(el("div", { class: "sub", text: sub2 }));
+    return el("div", { class: "stat" }, kids);
+  }
+
+  /* Booked calls that are not in the show rate (yet), so a card always adds up to its booked count. */
+  function openCalls(pending, cancelled, upcoming) {
+    var parts = [];
+    if (pending) parts.push(num(pending) + " no outcome yet");
+    if (cancelled) parts.push(num(cancelled) + " cancelled");
+    if (upcoming) parts.push(num(upcoming) + " upcoming");
+    return parts.join(" · ");
   }
 
   function syncErrors(s) {
@@ -215,9 +226,9 @@
     box.appendChild(el("div", { class: "cards" }, [
       stat("Total Leads", num(t.leads), num(t.qualified) + " sent to the calendar"),
       stat("Setter Booked", num(t.booked), pct(t.bookRate) + " of leads"),
-      stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show"),
+      stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show", openCalls(t.pending, t.cancelled, t.upcoming)),
       stat("Closer Booked", num(t.closerBooked), pct(t.closerBookRate) + " of setter shows"),
-      stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show"),
+      stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show", openCalls(t.closerPending, t.closerCancelled, t.closerUpcoming)),
       stat("Close Rate", pct(t.closeRate), num(t.won) + " won of " + num(t.closerShowed) + " closer shows"),
       stat("$ / Booked Call", money(t.cashPerBooked), money(t.cash) + " cash"),
     ]));
