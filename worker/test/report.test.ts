@@ -137,6 +137,26 @@ test("booked calls without an outcome split into upcoming / cancelled / pending,
   assert.equal(t.closerShowed + t.closerNoShow + t.closerPending + t.closerCancelled + t.closerUpcoming, t.closerBooked);
 });
 
+test("hand-set outcomes win: attendance either way, a GHL Won undone, a close GHL does not know about", () => {
+  // Logan's case: GHL says Won, Michael says he did not close.
+  const undone = leadOutcome(lead({ pipeline_stage: "Won", opportunity_value: 30000, won_manual: 0 }), NOW);
+  assert.deepEqual([undone.won, undone.cash, undone.closerShowed], [false, 0, true]);
+  const added = leadOutcome(lead({ pipeline_stage: "Closer Followup", won_manual: 1, cash_manual: 25500 }), NOW);
+  assert.deepEqual([added.won, added.cash], [true, 25500]);
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Won", opportunity_value: 30000, won_manual: 1, cash_manual: null }), NOW).cash, 30000);
+  // Attendance: a long call is overruled by a hand-set no-show, and a hand-set show needs no witness.
+  const s1 = leadOutcome(booked({ setter_call_seconds: 900, setter_attended_manual: "no_show" }), NOW);
+  assert.deepEqual([s1.setterShowed, s1.setterNoShow, s1.setterPending], [false, true, false]);
+  const s2 = leadOutcome(booked({ setter_attended_manual: "showed" }), NOW);
+  assert.deepEqual([s2.setterShowed, s2.setterNoShow], [true, false]);
+  const c1 = leadOutcome(lead({ closer_appointment_id: "c", closer_start: "2026-11-05T15:00:00.000Z", closer_attended: "showed", closer_attended_manual: "no_show", pipeline_stage: "Closer Booked" }), NOW);
+  assert.deepEqual([c1.closerShowed, c1.closerNoShow, c1.closerPending], [false, true, false]);
+  const c2 = leadOutcome(lead({ closer_appointment_id: "c", closer_start: "2026-11-05T15:00:00.000Z", closer_attended: "no_show", closer_attended_manual: "showed", pipeline_stage: "Closer Booked Noshow" }), NOW);
+  assert.deepEqual([c2.closerShowed, c2.closerNoShow], [true, false]);
+  // null = automatic, as before
+  assert.equal(leadOutcome(lead({ pipeline_stage: "Won", opportunity_value: 100, won_manual: null }), NOW).won, true);
+});
+
 test("buildReport totals, rates and per-answer rows", () => {
   const leads: ReportLead[] = [
     booked({ setter_call_seconds: 400, setter_calls: 1, pipeline_stage: "Won", opportunity_value: 20000 }),

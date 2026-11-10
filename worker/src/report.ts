@@ -42,6 +42,13 @@ export type ReportLead = {
   credit_score: number | null;
   credit_offer_amount_1: string | null;
   credit_offer_amount_2: string | null;
+  /** Set by hand on the Appointments page; null/absent = automatic. These win over every other witness. */
+  setter_attended_manual?: string | null;
+  closer_attended_manual?: string | null;
+  /** 1 = closed (cash_manual is the amount), 0 = did not close even if GHL says Won, null = follow GHL. */
+  won_manual?: number | null;
+  cash_manual?: number | null;
+  close_date_manual?: string | null;
 };
 
 type StageFacts = { talked: boolean; setterNoShow: boolean; setterDq: boolean; toCloser: boolean; closerBooked: boolean; closerShowed: boolean; closerNoShow: boolean; won: boolean };
@@ -94,24 +101,26 @@ export type Outcome = {
 /** Everything the report counts for one lead, as of `nowIso`. */
 export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const stage = STAGE_FACTS[(l.pipeline_stage ?? "").trim().toLowerCase()] ?? NO;
-  const won = stage.won || l.opportunity_status === "won";
+  // Hand-set outcomes (Appointments page) win over everything below.
+  const manualSetter = l.setter_attended_manual ?? null, manualCloser = l.closer_attended_manual ?? null;
+  const won = l.won_manual === 1 ? true : l.won_manual === 0 ? false : stage.won || l.opportunity_status === "won";
   const booked = !!l.appointment_id;
   // A call counts as missed half an hour after its start, so a call in progress is not a no-show.
   const past = !!l.appointment_start && Date.parse(l.appointment_start) + NO_SHOW_GRACE_MS <= Date.parse(nowIso);
   const longCall = (l.setter_call_seconds ?? 0) >= SHOW_MIN_CALL_SECONDS;
   // The GHL appointment status is a third witness when the setter marks the call by hand.
   const ghlSetter = (l.appointment_status ?? "").toLowerCase();
-  const talked = longCall || stage.talked || won || ghlSetter === "showed";
+  const talked = manualSetter === "showed" || (manualSetter !== "no_show" && (longCall || stage.talked || won || ghlSetter === "showed"));
   // A past booked call with no conversation is a no-show once the setter marked it or tried calling.
-  const setterNoShow = booked && past && !talked && (stage.setterNoShow || ghlSetter === "noshow" || (l.setter_calls ?? 0) > 0);
+  const setterNoShow = manualSetter === "no_show" ? booked : booked && past && !talked && (stage.setterNoShow || ghlSetter === "noshow" || (l.setter_calls ?? 0) > 0);
   const toCloser = stage.toCloser || won || !!l.closer_appointment_id;
   const closerBooked = stage.closerBooked || won || !!l.closer_appointment_id;
   const ghlCloser = (l.closer_status ?? "").toLowerCase();
   // Any positive witness wins: a Meet/Fathom record of the prospect, a card moved to Followup/Won, or a hand-set
   // GHL status. A Meet "no_show" alone does not overrule a card a human moved past the call (seen live: a Closer
   // Followup lead whose call happened off-Meet), it only decides when nobody recorded a show.
-  const closerShowed = won || l.closer_attended === "showed" || stage.closerShowed || ghlCloser === "showed";
-  const closerNoShow = !closerShowed && (l.closer_attended === "no_show" || stage.closerNoShow || ghlCloser === "noshow");
+  const closerShowed = manualCloser === "showed" || (manualCloser !== "no_show" && (won || l.closer_attended === "showed" || stage.closerShowed || ghlCloser === "showed"));
+  const closerNoShow = manualCloser === "no_show" ? closerBooked : !closerShowed && (l.closer_attended === "no_show" || stage.closerNoShow || ghlCloser === "noshow");
   // Booked calls with no outcome yet, split so the counts always add up to booked.
   const setterShowed = booked && talked;
   const setterOpen = booked && !setterShowed && !setterNoShow;
@@ -131,7 +140,7 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
     closerShowed,
     closerNoShow,
     won,
-    cash: won ? l.opportunity_value ?? 0 : 0,
+    cash: won ? l.cash_manual ?? l.opportunity_value ?? 0 : 0,
     setterUpcoming,
     setterCancelled,
     setterPending: setterOpen && !setterCancelled && !setterUpcoming,

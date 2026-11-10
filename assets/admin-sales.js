@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var ui = { rank: "cash", view: null, search: "", closer: "all", setter: "all", type: "all", status: "any", shown: 50, filtersOpen: false };
+  var ui = { rank: "cash", view: null, search: "", closer: "all", setter: "all", type: "all", status: "any", shown: 50, edit: null, editError: "", saving: false };
 
   function repName(email, names) {
     if (!email || email === "(unassigned)") return "Unassigned";
@@ -162,6 +162,7 @@
   function evidenceCell(h, r) {
     if (r.status !== "showed") return h.el("span", { class: "muted", text: "—" });
     var e = r.evidence;
+    if (e.kind === "manual") return h.el("span", { class: "ev", text: "Set by hand" });
     if (e.kind === "meet") return h.el("span", { class: "ev good", text: "Meet · " + (e.minutes != null ? e.minutes + " min" : "attended") });
     if (e.kind === "fathom") return h.el("span", { class: "ev good", text: "Fathom · " + (e.minutes != null ? e.minutes + " min" : "recording") });
     if (e.kind === "call") return h.el("span", { class: "ev good", text: "Call · " + e.minutes + " min" });
@@ -190,6 +191,53 @@
     return h.el("label", { class: "f-row" }, [h.el("span", { class: "f-l", text: label }), s]);
   }
 
+  /* ---- hand-set outcomes: the Status and Closed cells open an inline editor (CSP's pencil-in-the-cell pattern) ---- */
+  function editKey(r, field) { return r.kind + ":" + r.lead_id + ":" + field; }
+  function pencil(h, r, field, label) {
+    return h.el("button", { type: "button", class: "edit-btn", "aria-label": label, title: label, on: { click: function () { ui.edit = ui.edit === editKey(r, field) ? null : editKey(r, field); ui.editError = ""; h.rerender(); } } }, ["✎"]);
+  }
+  function save(h, leadId, body) {
+    ui.saving = true; h.rerender();
+    h.api("/admin/leads/" + leadId + "/outcome", { method: "POST", body: body })
+      .then(function () { ui.edit = null; ui.editError = ""; ui.saving = false; h.reload(); })
+      .catch(function (e) { ui.editError = e.message || "Could not save"; ui.saving = false; h.rerender(); });
+  }
+  function editorBox(h, kids) {
+    return h.el("div", { class: "inline-edit" }, kids.concat([ui.editError ? h.el("div", { class: "small bad-text", role: "alert", text: ui.editError }) : null]));
+  }
+  var ATTEND_OPTIONS = [["auto", "Automatic"], ["showed", "Showed"], ["no_show", "No show"]];
+  function statusEditor(h, r) {
+    var sel = h.el("select", { "aria-label": "Status" }, ATTEND_OPTIONS.map(function (o) { return h.el("option", { value: o[0], text: o[1] }); }));
+    sel.value = r.manual.status ? r.status : "auto";
+    sel.disabled = ui.saving;
+    sel.addEventListener("change", function () { save(h, r.lead_id, { kind: r.kind, status: sel.value }); });
+    return editorBox(h, [
+      h.el("label", { class: "f-row" }, [h.el("span", { class: "f-l", text: (r.kind === "setter" ? "Setter" : "Closer") + " call" }), sel]),
+      h.el("div", { class: "muted small", text: "Automatic = call log, Meet / Fathom, GHL." }),
+    ]);
+  }
+  var WON_OPTIONS = [["auto", "Follow GHL"], ["yes", "Closed"], ["no", "Did not close"]];
+  function closeEditor(h, r) {
+    var won = h.el("select", { "aria-label": "Closed" }, WON_OPTIONS.map(function (o) { return h.el("option", { value: o[0], text: o[1] }); }));
+    won.value = !r.manual.close ? "auto" : r.closed ? "yes" : "no";
+    var cash = h.el("input", { type: "number", min: "0", step: "100", inputmode: "numeric", placeholder: "Amount", "aria-label": "Amount", value: r.closed && r.cash ? String(r.cash) : "" });
+    var date = h.el("input", { type: "date", "aria-label": "Close date", value: r.close_date ? String(r.close_date).slice(0, 10) : "" });
+    var sync = function () { var on = won.value === "yes"; cash.disabled = !on; date.disabled = !on; };
+    won.addEventListener("change", sync); sync();
+    var saveBtn = h.el("button", { type: "button", class: "btn primary", text: ui.saving ? "Saving…" : "Save", on: { click: function () {
+      var body = won.value === "auto" ? { won: "auto" } : won.value === "no" ? { won: false } : { won: true, cash: Number(cash.value) || 0, close_date: date.value || null };
+      save(h, r.lead_id, body);
+    } } });
+    if (ui.saving) saveBtn.disabled = true;
+    var cancel = h.el("button", { type: "button", class: "btn", text: "Cancel", on: { click: function () { ui.edit = null; ui.editError = ""; h.rerender(); } } });
+    return editorBox(h, [
+      h.el("label", { class: "f-row" }, [h.el("span", { class: "f-l", text: "Closed" }), won]),
+      h.el("label", { class: "f-row" }, [h.el("span", { class: "f-l", text: "Amount ($)" }), cash]),
+      h.el("label", { class: "f-row" }, [h.el("span", { class: "f-l", text: "Close date" }), date]),
+      h.el("div", { class: "actions" }, [saveBtn, cancel]),
+    ]);
+  }
+
   function renderAppointments(box, data, h) {
     if (unavailable(box, data, h)) return;
     var all = data.appointments, names = data.names || {};
@@ -202,24 +250,25 @@
     var search = h.el("input", { type: "search", class: "search", placeholder: "Search customer or appointment…", value: ui.search, "aria-label": "Search" });
     search.addEventListener("input", function () { ui.search = search.value; ui.shown = 50; h.rerender(); var s = document.querySelector("input.search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } });
     var n = activeFilters();
-    var fbtn = h.el("button", { type: "button", class: "btn", "aria-expanded": ui.filtersOpen ? "true" : "false", on: { click: function () { ui.filtersOpen = !ui.filtersOpen; h.rerender(); } } }, ["Filters", n ? h.el("span", { class: "count", text: String(n) }) : null]);
     var reps = function (key) {
       var seen = {};
       all.forEach(function (r) { if (r[key]) seen[r[key]] = true; });
       return Object.keys(seen).sort(function (a, b) { return repName(a, names).localeCompare(repName(b, names)); }).map(function (e) { return [e, repName(e, names)]; });
     };
-    var pop = ui.filtersOpen ? h.el("div", { class: "filters" }, [
-      n ? h.el("button", { type: "button", class: "link", text: "Reset filters", on: { click: function () { ui.closer = "all"; ui.setter = "all"; ui.type = "all"; ui.status = "any"; ui.shown = 50; h.rerender(); } } }) : null,
+    // Filters stay on screen (Michael, 2026-11-10), in CSP's order: Closer, Setter, Type, Status.
+    var filters = h.el("div", { class: "filters inline" }, [
       select(h, "Closer", ui.closer, [["all", "All Closers"]].concat(reps("closer")), function (v) { ui.closer = v; }),
       select(h, "Setter", ui.setter, [["all", "All Setters"]].concat(reps("setter")), function (v) { ui.setter = v; }),
       select(h, "Type", ui.type, TYPE_OPTIONS, function (v) { ui.type = v; }),
       select(h, "Status", ui.status, STATUS_OPTIONS, function (v) { ui.status = v; }),
-    ]) : null;
+      n ? h.el("button", { type: "button", class: "link", text: "Reset filters", on: { click: function () { ui.closer = "all"; ui.setter = "all"; ui.type = "all"; ui.status = "any"; ui.shown = 50; h.rerender(); } } }) : null,
+    ]);
 
     var cols = ["Closer", "Setter", "Appointment", "Customer", "Score", "Scheduled for", "Status", "Closed", "Close date", "Recording / note"];
     var head = h.el("tr", null, cols.map(function (c) { return h.el("th", { class: "left", text: c }); }));
     var shown = rows.slice(0, ui.shown);
     var body = shown.map(function (r) {
+      var statusOpen = ui.edit === editKey(r, "status"), closeOpen = ui.edit === editKey(r, "close");
       return h.el("tr", null, [
         h.el("td", { class: "left muted", text: r.closer ? repName(r.closer, names) : "—" }),
         h.el("td", { class: "left" + (r.setter ? "" : " muted"), text: r.setter ? repName(r.setter, names) : "Unassigned" }),
@@ -227,10 +276,10 @@
         h.el("td", { class: "left" }, [h.el("div", { class: "cust", text: r.name || "—" }), r.city ? h.el("div", { class: "muted small", text: r.city }) : null]),
         h.el("td", { class: "left" + (r.credit_score == null ? " muted" : ""), text: r.credit_score == null ? "—" : String(r.credit_score) }),
         h.el("td", { class: "left muted", text: when(r.start) }),
-        h.el("td", { class: "left" }, [statusPills(h, r)]),
-        h.el("td", { class: "left", text: r.closed ? h.money(r.cash) : "—" }),
-        h.el("td", { class: "left", text: r.closed ? day(r.close_date) : "—" }),
-        h.el("td", { class: "left" }, [evidenceCell(h, r)]),
+        h.el("td", { class: "left" }, [h.el("div", { class: "cell-edit" }, [statusPills(h, r), pencil(h, r, "status", "Change status")]), statusOpen ? statusEditor(h, r) : null]),
+        h.el("td", { class: "left" }, [h.el("div", { class: "cell-edit" }, [h.el("span", { class: r.closed ? "strong" : "muted", text: r.closed ? h.money(r.cash) : "—" }), pencil(h, r, "close", r.closed ? "Edit close" : "Mark as closed")]), closeOpen ? closeEditor(h, r) : null]),
+        h.el("td", { class: "left" + (r.closed ? "" : " muted"), text: r.closed ? day(r.close_date) : "—" }),
+        h.el("td", { class: "left" }, [evidenceCell(h, r), r.manual.close ? h.el("div", { class: "muted small", text: r.closed ? "Close set by hand" : "Not closed (set by hand)" }) : null]),
       ]);
     });
     var empty = null;
@@ -239,8 +288,7 @@
     var more = rows.length > shown.length ? h.el("button", { type: "button", class: "btn", text: "Show more", on: { click: function () { ui.shown += 25; h.rerender(); } } }) : null;
 
     box.appendChild(h.el("div", { class: "card sales-card" }, [
-      h.el("div", { class: "toolbar" }, [search, h.el("div", { class: "toolbar-r" }, [fbtn])]),
-      pop,
+      h.el("div", { class: "toolbar" }, [search, filters]),
       empty ? h.el("p", { class: "muted empty", text: empty }) : h.el("div", { class: "scroll" }, [h.el("table", { class: "appts" }, [h.el("thead", null, [head]), h.el("tbody", null, body)])]),
       h.el("div", { class: "foot" }, [h.el("span", { class: "muted small", text: "Showing " + h.num(shown.length) + " of " + h.num(rows.length) + " appointments" }), more]),
     ]));

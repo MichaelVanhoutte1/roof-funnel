@@ -28,6 +28,21 @@ test("one row per appointment, placed by its own start, newest first, outside th
   ]);
 });
 
+test("hand-set status and close show on the row as manual, with the hand-set amount and day", () => {
+  const rows = buildAppointments([
+    lead({ closer_appointment_id: "c", closer_start: "2026-11-04T15:00:00.000Z", closer_host: CALVIN, closer_status: "cancelled", closer_attended_manual: "showed", pipeline_stage: "Closer Booked", won_manual: 1, cash_manual: 25500, close_date_manual: "2026-11-06" }),
+    lead({ closer_appointment_id: "c", closer_start: "2026-11-03T15:00:00.000Z", closer_host: CALVIN, closer_status: "confirmed", pipeline_stage: "Won", pipeline_stage_at: "2026-11-03T16:00:00.000Z", opportunity_value: 30000, won_manual: 0 }),
+    lead({ appointment_id: "s", appointment_start: "2026-11-02T15:00:00.000Z", setter_call_seconds: 600, setter_attended_manual: "no_show" }),
+  ], FROM, TO, NOW);
+  assert.deepEqual(rows.map((r) => [r.status, r.evidence.kind, r.closed, r.cash, r.close_date, r.manual]), [
+    ["showed", "manual", true, 25500, "2026-11-06", { status: true, close: true }],
+    ["showed", "stage", false, 0, null, { status: false, close: true }],
+    ["no_show", "none", false, 0, null, { status: true, close: false }],
+  ]);
+  const lb = buildLeaderboard(rows);
+  assert.deepEqual([lb.totals.deals, lb.totals.cash, lb.closers[0].closed], [1, 25500, 1]);
+});
+
 test("status vocabulary: cancelled, confirmed (future), pending (past, unknown), closed carries cash and date", () => {
   const rows = buildAppointments([
     lead({ appointment_id: "s", appointment_start: "2026-11-03T15:00:00.000Z", appointment_status: "cancelled" }),
