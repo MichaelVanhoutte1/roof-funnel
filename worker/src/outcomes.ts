@@ -12,6 +12,7 @@
  */
 import { ghl, type GhlConfig } from "./ghl.ts";
 import { MEET_SCOPE, parseServiceAccount, serviceAccountToken } from "./google.ts";
+import { maskEmail } from "./log-mask.ts";
 
 const OPPORTUNITIES_API = { Version: "2021-07-28" };
 const SQL_NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -214,26 +215,30 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
          closer_attended_source = CASE WHEN ${keep} THEN closer_attended_source ELSE NULL END,
          closer_minutes = CASE WHEN ${keep} THEN closer_minutes ELSE NULL END,
          closer_checked_at = CASE WHEN ${keep} THEN closer_checked_at ELSE NULL END,
-         closer_appointment_id = ?1, closer_start = ?2, closer_status = ?3, closer_meet_code = ?4, closer_host = ?6
+         closer_appointment_id = ?1, closer_start = ?2, closer_status = ?3, closer_meet_code = ?4, closer_host = COALESCE(?6, closer_host)
        WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
-         AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4 OR closer_host IS NOT ?6)`,
-    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId, hosts.get(e.assignedUserId ?? "") ?? null));
+         AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4 OR (?6 IS NOT NULL AND closer_host IS NOT ?6))`,
+    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId, hosts?.get(e.assignedUserId ?? "") ?? null));
   return { events: events.length, updated: await runBatches(db, statements) };
 }
 
 type GhlUser = { id: string; email?: string | null };
 
-/** GHL user id → lower-cased email for the ids given; skipped (no request) when no event names a host. */
-async function hostEmails(cfg: GhlConfig, userIds: string[]): Promise<Map<string, string>> {
+/**
+ * GHL user id → lower-cased email for the ids given (needs the `users.readonly` scope on the PIT). Skipped (no request)
+ * when no event names a host. On failure returns null and the stored hosts are left untouched (COALESCE in the write).
+ */
+async function hostEmails(cfg: GhlConfig, userIds: string[]): Promise<Map<string, string> | null> {
   const out = new Map<string, string>();
   if (!userIds.some(Boolean)) return out;
   try {
     const data = await ghl<{ users?: GhlUser[] }>(cfg, `/users/?locationId=${cfg.locationId}`);
     for (const u of data.users ?? []) if (u.id && u.email) out.set(u.id, u.email.trim().toLowerCase());
+    return out;
   } catch (err) {
     console.error("[sync] GHL users lookup failed; closer hosts left as they were:", errorText(err));
+    return null;
   }
-  return out;
 }
 
 /* ---------------- 3b. closer attendance (Google Meet, else Fathom) ---------------- */
@@ -280,21 +285,29 @@ async function fathomMeetings(apiKey: string, sinceIso: string, maxPages: number
 
 type MeetParticipant = {
   earliestStartTime?: string; latestEndTime?: string;
-  signedinUser?: { displayName?: string }; anonymousUser?: { displayName?: string }; phoneUser?: { displayName?: string };
+  signedinUser?: { user?: string; displayName?: string }; anonymousUser?: { displayName?: string }; phoneUser?: { displayName?: string };
 };
 
 const NOTETAKER = /notetaker|fathom|otter|fireflies|read\.ai|recorder|\bbot\b/i;
 
-/** showed = at least two people (note-taking bots ignored), the second-longest present for MEET_SHOW_MIN_MINUTES or more. */
+/**
+ * showed = at least two PEOPLE (note-taking bots ignored), the second-longest present for MEET_SHOW_MIN_MINUTES or more.
+ * A participant entry is one person in one conference record; the same person across several records of the call
+ * (the host reopening the room) is one person, so minutes are summed per person before ranking.
+ */
 export function meetAttendance(participants: MeetParticipant[], nowMs: number): Attendance {
-  const minutes = participants
-    .filter((p) => !NOTETAKER.test(p.signedinUser?.displayName ?? p.anonymousUser?.displayName ?? p.phoneUser?.displayName ?? ""))
-    .map((p) => {
-      const start = Date.parse(p.earliestStartTime ?? ""), end = p.latestEndTime ? Date.parse(p.latestEndTime) : nowMs;
-      return Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start) / 60_000 : 0;
-    })
-    .sort((a, b) => b - a);
-  const second = Math.round(minutes[1] ?? 0);
+  const perPerson = new Map<string, number>();
+  participants.forEach((p, i) => {
+    const name = p.signedinUser?.displayName ?? p.anonymousUser?.displayName ?? p.phoneUser?.displayName ?? "";
+    if (NOTETAKER.test(name)) return;
+    // Signed-in users carry a stable id; guests only a name. An entry with neither is counted as its own person.
+    const key = p.signedinUser?.user ?? (name ? `${p.signedinUser ? "s" : p.anonymousUser ? "a" : "p"}:${name}` : `#${i}`);
+    const start = Date.parse(p.earliestStartTime ?? ""), end = p.latestEndTime ? Date.parse(p.latestEndTime) : nowMs;
+    const minutes = Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start) / 60_000 : 0;
+    perPerson.set(key, (perPerson.get(key) ?? 0) + minutes);
+  });
+  const ranked = [...perPerson.values()].sort((a, b) => b - a);
+  const second = Math.round(ranked[1] ?? 0);
   return { attended: second >= MEET_SHOW_MIN_MINUTES ? "showed" : "no_show", minutes: second };
 }
 
@@ -306,13 +319,15 @@ export function meetAttendance(participants: MeetParticipant[], nowMs: number): 
  */
 async function meetParticipants(accessToken: string, code: string, appointmentIso: string): Promise<MeetParticipant[] | null> {
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
-  const filter = encodeURIComponent(`space.meeting_code = "${code}"`);
-  const res = await fetch(`https://meet.googleapis.com/v2/conferenceRecords?filter=${filter}`, { headers, signal: AbortSignal.timeout(10_000) });
+  const appointment = Date.parse(appointmentIso);
+  const from = new Date(appointment - WINDOW_BEFORE_MS).toISOString(), to = new Date(appointment + WINDOW_AFTER_MS).toISOString();
+  const filter = encodeURIComponent(`space.meeting_code = "${code}" AND start_time>="${from}" AND start_time<="${to}"`);
+  const res = await fetch(`https://meet.googleapis.com/v2/conferenceRecords?filter=${filter}&pageSize=10`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Meet conferenceRecords → ${res.status}`);
   const records = ((await res.json()) as { conferenceRecords?: Array<{ name: string; startTime?: string }> }).conferenceRecords ?? [];
   // A call often has several records (the host opens the room, drops, reopens): merge the participants of every record
-  // around the appointment (seen live: a 3-minute false start before the real 56-minute call). At most 3 records.
-  const near = records.filter((r) => nearAppointment(r.startTime, appointmentIso)).sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "")).slice(0, 3);
+  // around the appointment (seen live: a 3-minute false start before the real 56-minute call). At most 2 records.
+  const near = records.filter((r) => nearAppointment(r.startTime, appointmentIso)).sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "")).slice(0, 2);
   if (!near.length) return null;
   const all: MeetParticipant[] = [];
   for (const record of near) {
@@ -327,6 +342,7 @@ type CloserDue = { id: number; closer_meet_code: string; closer_start: string; c
 
 export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: number): Promise<{ source: "google_meet" | "fathom" | "none"; checked: number; resolved: number }> {
   const sa = parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
+  if (env.GOOGLE_MEET_SERVICE_ACCOUNT && !sa) console.error("[sync] GOOGLE_MEET_SERVICE_ACCOUNT is set but is not a service-account key file; Meet attendance is off");
   const source = sa ? "google_meet" : env.FATHOM_API_KEY ? "fathom" : "none";
   if (source === "none") return { source, checked: 0, resolved: 0 };
 
@@ -349,7 +365,7 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
     // a call hosted from a @stonesystems.io account was readable as the closer who sat in on it).
     const tokens = new Map<string, string | null>();
     for (const host of new Set(due.map((l) => l.closer_host!))) {
-      try { tokens.set(host, await serviceAccountToken(sa, host, MEET_SCOPE, fetch, nowMs)); } catch (err) { tokens.set(host, null); console.error("[sync] Google token failed:", errorText(err)); }
+      try { tokens.set(host, await serviceAccountToken(sa, host, MEET_SCOPE, fetch, nowMs)); } catch (err) { tokens.set(host, null); console.error("[sync] Google token failed:", errorText(err).replace(host, maskEmail(host))); }
     }
     for (const lead of due) {
       const order = [lead.closer_host!, ...[...tokens.keys()].filter((h) => h !== lead.closer_host)];
@@ -360,7 +376,7 @@ export async function syncCloserAttendance(env: SyncEnv, nowMs: number, max: num
           const participants = await meetParticipants(token, lead.closer_meet_code, lead.closer_start);
           if (participants) { found.set(lead.id, meetAttendance(participants, nowMs)); break; }
         } catch (err) {
-          console.error("[sync] Meet lookup failed for lead", lead.id, "as", host, errorText(err));
+          console.error("[sync] Meet lookup failed for lead", lead.id, "as", maskEmail(host), errorText(err));
         }
       }
     }
@@ -389,12 +405,15 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
   if (cfg) {
     try { summary.pipeline = await syncPipeline(env.DB, cfg); } catch (err) { summary.pipeline = { error: errorText(err) }; }
     try { summary.closerAppointments = await syncCloserAppointments(env.DB, cfg, nowMs); } catch (err) { summary.closerAppointments = { error: errorText(err) }; }
-    // Budget per run (Workers free plan: 50 subrequests): pipeline <= 7, closer calendars <= 6 (incl. users), call logs
-    // 2 per lead, attendance <= 3 with Fathom, or <= 15 with Google Meet (up to 3 token exchanges + up to 4 calls for each of 3 leads).
-    const callLogs = env.GOOGLE_MEET_SERVICE_ACCOUNT ? 6 : 12;
+    // Budget per run (Workers free plan: 50 subrequests, D1 calls included): D1 ~ 8–14 (pipeline batches of 50 contacts,
+    // closer batch, setter SELECT/COUNT/batch, attendance SELECT/batch, settings). Fetch: pipeline <= 7, closer calendars
+    // <= 6 (incl. users), call logs 2 per lead, attendance <= 3 with Fathom or <= 12 with Google Meet (<= 2 tokens + for
+    // each of 2 leads: 1 list + <= 2 participants, + 1 fallback list + 1). Meet: 7+6+8+12 = 33 fetch + 14 D1 = 47.
+    const meetOn = !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
+    const callLogs = meetOn ? 4 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
   }
-  try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 3); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }
+  try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 2); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }
   try {
     await env.DB.prepare(
       `INSERT INTO settings (key, value, updated_at) VALUES ('sync_status', ?1, ${SQL_NOW})
