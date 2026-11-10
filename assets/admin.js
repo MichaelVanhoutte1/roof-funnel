@@ -15,7 +15,7 @@
   if (isLocal && override) API = override.replace(/\/+$/, ""); // local preview against a local Worker only
 
   var TOKEN_KEY = "rf_admin_key";
-  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, sales: null, rules: null, questions: [], busy: false, open: {} };
+  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, sales: null, rules: null, questions: [], busy: false, open: {}, leadFilter: { q: "", funnel: "all", setter: "all", closer: "all", won: "all" } };
 
   /* sessionStorage, not localStorage: the key is visible to this tab only, which loads no third-party script.
      (The public funnel pages on this domain load vendor scripts; those must never be able to read it.) */
@@ -263,8 +263,44 @@
   }
   function shortCapital(v) { return !v ? "–" : /financing/i.test(v) ? "Financing" : /^Yes/.test(v) ? "Has $20k" : "No capital"; }
 
+  /* Leads tab filters (Michael, 2026-11-10: "I can't filter the leads"). Client-side over the loaded rows. */
+  var LEAD_FILTERS = {
+    funnel: ["Funnel", [["all", "All results"], ["calendar", "Sent to the calendar"], ["dq", "Disqualified"], ["partial", "Unfinished"]]],
+    setter: ["Setter call", [["all", "Any"], ["showed", "Showed"], ["no_show", "No-show"], ["pending", "Pending"], ["none", "Not booked"]]],
+    closer: ["Closer call", [["all", "Any"], ["showed", "Showed"], ["no_show", "No-show"], ["pending", "Pending"], ["none", "Not booked"]]],
+    won: ["Won", [["all", "Any"], ["yes", "Won"], ["no", "Not won"]]],
+  };
+  function leadMatches(l, f) {
+    var q = f.q.trim().toLowerCase();
+    if (q && ((l.name || "") + " " + (l.city || "") + " " + (l.pipeline_stage || "")).toLowerCase().indexOf(q) === -1) return false;
+    if (f.funnel === "calendar" && !(l.status === "full" && l.route === "calendar")) return false;
+    if (f.funnel === "dq" && !(l.status === "full" && l.route !== "calendar")) return false;
+    if (f.funnel === "partial" && l.status === "full") return false;
+    if (f.setter !== "all" && (f.setter === "none" ? !!l.setter : l.setter !== f.setter)) return false;
+    if (f.closer !== "all" && (f.closer === "none" ? !!l.closer : l.closer !== f.closer)) return false;
+    if (f.won === "yes" && !l.won) return false;
+    if (f.won === "no" && l.won) return false;
+    return true;
+  }
+  function leadsToolbar() {
+    var f = state.leadFilter;
+    var search = el("input", { type: "search", class: "search", placeholder: "Search name, city or stage…", value: f.q, "aria-label": "Search leads" });
+    search.addEventListener("input", function () { f.q = search.value; render(); var s = document.querySelector("input.search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } });
+    var selects = Object.keys(LEAD_FILTERS).map(function (key) {
+      var def = LEAD_FILTERS[key];
+      var s = el("select", { "aria-label": def[0] }, def[1].map(function (o) { return el("option", { value: o[0], text: o[1] }); }));
+      s.value = f[key];
+      s.addEventListener("change", function () { f[key] = s.value; render(); });
+      return el("label", { class: "f-row" }, [el("span", { class: "f-l", text: def[0] }), s]);
+    });
+    var active = Object.keys(LEAD_FILTERS).some(function (k) { return f[k] !== "all"; });
+    if (active) selects.push(el("button", { type: "button", class: "link", text: "Reset filters", on: { click: function () { Object.keys(LEAD_FILTERS).forEach(function (k) { f[k] = "all"; }); render(); } } }));
+    return el("div", { class: "toolbar" }, [search, el("div", { class: "filters inline" }, selects)]);
+  }
+
   function renderLeads(box) {
-    var leads = state.leads || [];
+    var all = state.leads || [];
+    var leads = all.filter(function (l) { return leadMatches(l, state.leadFilter); });
     var cols = ["Lead", "Applied", "Capital", "Timeline", "Owner", "Credit", "Funnel", "Setter call", "Stage in GHL", "Closer call", "Won"];
     var head = el("tr", null, cols.map(function (c, i) { return el("th", { class: i ? "left" : null, text: c }); }));
     var rows = leads.map(function (l) {
@@ -283,8 +319,14 @@
         left(l.won ? pill(l.cash ? money(l.cash) : "Won", "good") : el("span", { class: "muted", text: "–" })),
       ]);
     });
-    box.appendChild(el("p", { class: "muted small", text: leads.length + " lead" + (leads.length === 1 ? "" : "s") + " in the selected dates" + (leads.length === 500 ? " (newest 500 shown)" : "") + "." }));
-    box.appendChild(el("div", { class: "card" }, [el("div", { class: "scroll" }, [el("table", null, [el("thead", null, [head]), el("tbody", null, rows)])])]));
+    var count = leads.length === all.length
+      ? leads.length + " lead" + (leads.length === 1 ? "" : "s") + " in the selected dates" + (all.length === 500 ? " (newest 500 shown)" : "") + "."
+      : leads.length + " of " + all.length + " leads match.";
+    box.appendChild(el("div", { class: "card" }, [
+      leadsToolbar(),
+      rows.length ? el("div", { class: "scroll" }, [el("table", null, [el("thead", null, [head]), el("tbody", null, rows)])]) : el("p", { class: "muted empty", text: all.length ? "No leads match these filters." : "No leads in the selected dates." }),
+      el("div", { class: "foot" }, [el("span", { class: "muted small", text: count })]),
+    ]));
   }
 
   /* ---------------- rules ---------------- */
@@ -410,7 +452,7 @@
       // Sales views live in admin-sales.js (same page, same data); they get the helpers they need and nothing else.
       var sales = window.RFAdminSales;
       if (!sales) box.appendChild(el("p", { class: "muted", text: "The sales views did not load. Refresh the page." }));
-      else sales[state.tab === "leaderboard" ? "renderLeaderboard" : "renderAppointments"](box, state.sales, { el: el, pill: pill, num: num, pct: pct, money: money, state: state, rerender: render });
+      else sales[state.tab === "leaderboard" ? "renderLeaderboard" : "renderAppointments"](box, state.sales, { el: el, pill: pill, num: num, pct: pct, money: money, state: state, rerender: render, api: api, reload: load });
     }
     else renderRules(box);
   }

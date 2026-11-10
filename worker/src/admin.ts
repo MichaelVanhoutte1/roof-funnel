@@ -65,7 +65,41 @@ function isoParam(v: string | null, fallback: string): string {
 
 const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start, appointment_status,
   pipeline_stage, opportunity_status, opportunity_value, setter_calls, setter_call_seconds, closer_appointment_id, closer_start,
-  closer_status, closer_attended, credit_status, credit_score, credit_offer_amount_1, credit_offer_amount_2`;
+  closer_status, closer_attended, credit_status, credit_score, credit_offer_amount_1, credit_offer_amount_2,
+  setter_attended_manual, closer_attended_manual, won_manual, cash_manual, close_date_manual`;
+
+const ATTENDED = new Set(["showed", "no_show", "auto"]);
+
+/**
+ * POST /admin/leads/<id>/outcome — hand-set outcomes from the Appointments page. Each field is optional and only the
+ * given ones change: status (setter or closer call, by `kind`) = showed | no_show | auto; won = true | false | "auto";
+ * cash (number, with won) and close_date (YYYY-MM-DD, with won). "auto" clears the hand-set value.
+ */
+async function setOutcome(db: D1Database, id: number, body: Record<string, unknown>): Promise<string | null> {
+  const sets: string[] = [], binds: unknown[] = [];
+  if (body.status !== undefined) {
+    const kind = body.kind === "setter" ? "setter" : body.kind === "closer" ? "closer" : null;
+    if (!kind || typeof body.status !== "string" || !ATTENDED.has(body.status)) return "status must be showed, no_show or auto, with kind setter or closer";
+    sets.push(`${kind}_attended_manual = ?`); binds.push(body.status === "auto" ? null : body.status);
+  }
+  if (body.won !== undefined) {
+    if (body.won !== true && body.won !== false && body.won !== "auto") return "won must be true, false or auto";
+    sets.push("won_manual = ?"); binds.push(body.won === "auto" ? null : body.won ? 1 : 0);
+    if (body.won !== true) { sets.push("cash_manual = NULL", "close_date_manual = NULL"); }
+  }
+  if (body.won === true || (body.won === undefined && body.cash !== undefined)) {
+    if (body.cash !== undefined && body.cash !== null && (typeof body.cash !== "number" || !Number.isFinite(body.cash) || body.cash < 0 || body.cash > 10_000_000)) return "cash must be a number";
+    if (body.cash !== undefined) { sets.push("cash_manual = ?"); binds.push(body.cash); }
+  }
+  if (body.won === true || (body.won === undefined && body.close_date !== undefined)) {
+    if (body.close_date !== undefined && body.close_date !== null && !(typeof body.close_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.close_date))) return "close_date must be YYYY-MM-DD";
+    if (body.close_date !== undefined) { sets.push("close_date_manual = ?"); binds.push(body.close_date); }
+  }
+  if (!sets.length) return "nothing to change";
+  sets.push(`outcome_manual_at = ${SQL_NOW}`);
+  const r = await db.prepare(`UPDATE leads SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
+  return r.meta.changes ? null : "lead not found";
+}
 
 type LeadListRow = ReportLead & { id: number; created_at: string; name: string | null; city: string | null; closer_attended_source: string | null };
 
@@ -146,6 +180,14 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
     const body = (await request.json().catch(() => null)) as { rules?: unknown } | null;
     if (!body || typeof body.rules !== "object" || body.rules === null) return json({ ok: false, error: "Bad request" }, 400, cors);
     return json({ ok: true, rules: await saveRules(env.DB, body.rules) }, 200, cors);
+  }
+
+  const outcome = request.method === "POST" ? /^\/admin\/leads\/(\d+)\/outcome$/.exec(path) : null;
+  if (outcome) {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== "object") return json({ ok: false, error: "Bad request" }, 400, cors);
+    const problem = await setOutcome(env.DB, Number(outcome[1]), body);
+    return problem ? json({ ok: false, error: problem }, problem === "lead not found" ? 404 : 400, cors) : json({ ok: true }, 200, cors);
   }
 
   if (request.method === "POST" && path === "/admin/sync") {

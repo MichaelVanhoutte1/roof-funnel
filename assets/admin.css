@@ -141,6 +141,19 @@ input.search{flex:1;min-width:240px;max-width:420px;border:1px solid var(--borde
 .f-row{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
 .f-row select{border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--card);font-size:14px;color:var(--text)}
 .link{border:0;background:none;color:var(--primary);cursor:pointer;padding:0;font-size:13px;grid-column:1/-1;justify-self:start}
+/* Filters that stay on screen, to the right of the search (Appointments, Leads). */
+.filters.inline{display:flex;flex-wrap:wrap;gap:10px;padding:0;align-items:flex-end}
+.filters.inline .f-row select{min-width:150px}
+.filters.inline .link{align-self:center;padding-bottom:8px}
+/* Hand-set outcomes: pencil in the cell, editor under it. */
+.cell-edit{display:flex;align-items:center;gap:4px}
+.edit-btn{border:0;background:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px 4px;border-radius:4px;opacity:.45}
+.edit-btn:hover,.edit-btn:focus-visible{opacity:1;color:var(--primary);background:var(--bg)}
+.inline-edit{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);min-width:220px}
+.inline-edit input{border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--card);font-size:14px;color:var(--text)}
+.inline-edit input[disabled],.inline-edit select[disabled]{opacity:.5}
+.inline-edit .actions{display:flex;gap:6px}
+.bad-text{color:#b42318}
 table.appts{font-size:14px}
 table.appts th{height:40px;font-size:12px;font-weight:500;color:var(--muted);text-transform:none;padding:0 12px}
 table.appts td{padding:8px 12px;vertical-align:top}

@@ -38,7 +38,9 @@ export type AppointmentRow = {
   credit_score: number | null;
   stage: string | null;
   /** How the show was established, for the "Recording / note" column. */
-  evidence: { kind: "call" | "meet" | "fathom" | "stage" | "ghl" | "none"; minutes: number | null };
+  evidence: { kind: "call" | "meet" | "fathom" | "stage" | "ghl" | "manual" | "none"; minutes: number | null };
+  /** Which parts were set by hand on this page (so the cells can say so and offer "back to automatic"). */
+  manual: { status: boolean; close: boolean };
 };
 
 const CANCELLED = /^cancel/i;
@@ -47,25 +49,41 @@ function isUpcoming(startIso: string, nowIso: string): boolean {
   return startIso > nowIso;
 }
 
+function manualStatus(v: string | null | undefined): "showed" | "no_show" | null {
+  return v === "showed" || v === "no_show" ? v : null;
+}
+
+/** The close columns shared by both rows: a hand-set close (amount, day) or GHL's Won. */
+function closeParts(l: SalesLead, o: Outcome) {
+  const manualClose = l.won_manual === 1 || l.won_manual === 0;
+  return { closed: o.won, cash: o.cash, close_date: !o.won ? null : l.close_date_manual ?? l.pipeline_stage_at, manualClose };
+}
+
 function setterRow(l: SalesLead, o: Outcome, nowIso: string): AppointmentRow {
   const cancelled = CANCELLED.test(l.appointment_status ?? "");
   const seconds = l.setter_call_seconds ?? 0;
-  const status: AppointmentRow["status"] = cancelled && !o.setterShowed ? "cancelled" : o.setterShowed ? "showed" : o.setterNoShow ? "no_show" : isUpcoming(l.appointment_start!, nowIso) ? "confirmed" : "pending";
+  const manual = manualStatus(l.setter_attended_manual);
+  const status: AppointmentRow["status"] = manual ?? (cancelled && !o.setterShowed ? "cancelled" : o.setterShowed ? "showed" : o.setterNoShow ? "no_show" : isUpcoming(l.appointment_start!, nowIso) ? "confirmed" : "pending");
   const evidence: AppointmentRow["evidence"] = !o.setterShowed
     ? { kind: "none", minutes: null }
+    : manual ? { kind: "manual", minutes: null }
     : seconds >= 120 ? { kind: "call", minutes: Math.round(seconds / 60) } : /^showed$/i.test(l.appointment_status ?? "") && !o.won ? { kind: "ghl", minutes: null } : { kind: "stage", minutes: null };
-  return { kind: "setter", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.appointment_start!, ghl_status: l.appointment_status, status, closed: o.won, cash: o.cash, close_date: o.won ? l.pipeline_stage_at : null, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence };
+  const c = closeParts(l, o);
+  return { kind: "setter", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.appointment_start!, ghl_status: l.appointment_status, status, closed: c.closed, cash: c.cash, close_date: c.close_date, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence, manual: { status: !!manual, close: c.manualClose } };
 }
 
 function closerRow(l: SalesLead, o: Outcome, nowIso: string): AppointmentRow {
   const cancelled = CANCELLED.test(l.closer_status ?? "");
-  const status: AppointmentRow["status"] = cancelled && !o.closerShowed ? "cancelled" : o.closerShowed ? "showed" : o.closerNoShow ? "no_show" : isUpcoming(l.closer_start!, nowIso) ? "confirmed" : "pending";
+  const manual = manualStatus(l.closer_attended_manual);
+  const status: AppointmentRow["status"] = manual ?? (cancelled && !o.closerShowed ? "cancelled" : o.closerShowed ? "showed" : o.closerNoShow ? "no_show" : isUpcoming(l.closer_start!, nowIso) ? "confirmed" : "pending");
   const src = l.closer_attended_source;
   const evidence: AppointmentRow["evidence"] = !o.closerShowed
     ? { kind: "none", minutes: null }
+    : manual ? { kind: "manual", minutes: null }
     : src === "google_meet" ? { kind: "meet", minutes: l.closer_minutes } : src === "fathom" ? { kind: "fathom", minutes: l.closer_minutes }
     : /^showed$/i.test(l.closer_status ?? "") && !o.won ? { kind: "ghl", minutes: null } : { kind: "stage", minutes: null };
-  return { kind: "closer", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.closer_start!, ghl_status: l.closer_status, status, closed: o.won, cash: o.cash, close_date: o.won ? l.pipeline_stage_at : null, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence };
+  const c = closeParts(l, o);
+  return { kind: "closer", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.closer_start!, ghl_status: l.closer_status, status, closed: c.closed, cash: c.cash, close_date: c.close_date, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence, manual: { status: !!manual, close: c.manualClose } };
 }
 
 /** One row per appointment whose start falls in [from, to), newest first. */
