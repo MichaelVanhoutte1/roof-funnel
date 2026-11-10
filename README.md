@@ -120,8 +120,12 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
      opportunity of a contact, written to that contact's newest lead row only.
   2. GHL call log for booked leads. The setter call is a phone call: a completed call of 2 minutes or more = showed
      (`SHOW_MIN_CALL_SECONDS`; measured on 99 past booked leads: every lead moved past the setter had one, no no-show did).
-  3. Closer appointments (calendars named "…closer…", Google Meet links, host = the GHL user the appointment is assigned
-     to, stored as `closer_host`) and who attended: Google Meet participants, read as the host through a service account
+  3. Appointments: the Setter Calendar (`GHL_CALENDAR_ID`, else a calendar named "…setter…"; last 7 days + next 30) refreshes
+     `appointment_id/_start/_status` and `setter_host` on the row already holding that appointment, so Overview "booked"
+     follows GHL (reschedules, cancellations, calls a setter books by hand for an applicant). A hand-set GHL status of
+     showed / noshow counts as a witness for both setter and closer calls, below the measured signals. Closer appointments
+     (calendars named "…closer…", Google Meet links, host = the GHL user the appointment is assigned to, stored as
+     `closer_host`) and who attended: Google Meet participants, read as the host through a service account
      with domain-wide delegation (`GOOGLE_MEET_SERVICE_ACCOUNT` = the key JSON; scope `meetings.space.readonly` delegated
      in the roof Workspace admin console, `google.ts`). No per-person authorization: a new closer only needs a Workspace
      account. A conference is listed for everyone who joined it, so a call hosted from outside the Workspace (e.g. a
@@ -133,7 +137,9 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
 - Pipeline stage names are mapped in `report.ts` (`STAGE_FACTS`). A renamed or new stage shows up on the page as
   "not recognised" until it is added there.
 - A sync run is budgeted for the Workers free plan (under 50 subrequests, D1 calls included): 12 call logs per run
-  (3 when Meet is on) and 2 closer calls; the arithmetic is in `runOutcomeSync`.
+  (2 when Meet is on) and 2 closer calls; the arithmetic is in `runOutcomeSync`. Settings keys: `rules`, `sync_status`,
+  `ghl_users` (GHL user email → name). Deploy order: migrations first (0009 adds the setter columns and indexes; the
+  sales endpoint fails on its own until then and the other tabs keep working), then the Worker.
 
 ## Native booking step
 

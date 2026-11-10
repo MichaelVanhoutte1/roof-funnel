@@ -27,6 +27,8 @@ export type ReportLead = {
   tracking: string | null;
   appointment_id: string | null;
   appointment_start: string | null;
+  /** GHL appointment status of the setter call (confirmed, showed, noshow, cancelled, ...). */
+  appointment_status: string | null;
   pipeline_stage: string | null;
   opportunity_status: string | null;
   opportunity_value: number | null;
@@ -86,14 +88,17 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   // A call counts as missed half an hour after its start, so a call in progress is not a no-show.
   const past = !!l.appointment_start && Date.parse(l.appointment_start) + NO_SHOW_GRACE_MS <= Date.parse(nowIso);
   const longCall = (l.setter_call_seconds ?? 0) >= SHOW_MIN_CALL_SECONDS;
-  const talked = longCall || stage.talked || won;
+  // The GHL appointment status is a third witness when the setter marks the call by hand.
+  const ghlSetter = (l.appointment_status ?? "").toLowerCase();
+  const talked = longCall || stage.talked || won || ghlSetter === "showed";
   // A past booked call with no conversation is a no-show once the setter marked it or tried calling.
-  const setterNoShow = booked && past && !talked && (stage.setterNoShow || (l.setter_calls ?? 0) > 0);
+  const setterNoShow = booked && past && !talked && (stage.setterNoShow || ghlSetter === "noshow" || (l.setter_calls ?? 0) > 0);
   const toCloser = stage.toCloser || won || !!l.closer_appointment_id;
   const closerBooked = stage.closerBooked || won || !!l.closer_appointment_id;
   const closerKnown = l.closer_attended === "showed" || l.closer_attended === "no_show";
-  const closerShowed = won || (closerKnown ? l.closer_attended === "showed" : stage.closerShowed);
-  const closerNoShow = !closerShowed && (closerKnown ? l.closer_attended === "no_show" : stage.closerNoShow);
+  const ghlCloser = (l.closer_status ?? "").toLowerCase();
+  const closerShowed = won || (closerKnown ? l.closer_attended === "showed" : stage.closerShowed || ghlCloser === "showed");
+  const closerNoShow = !closerShowed && (closerKnown ? l.closer_attended === "no_show" : stage.closerNoShow || ghlCloser === "noshow");
   return {
     booked,
     setterShowed: booked && talked,

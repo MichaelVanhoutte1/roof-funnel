@@ -94,8 +94,8 @@
     else if (r === "14") from = daysAgo(13);
     else if (r === "30") from = daysAgo(29);
     else if (r === "90") from = daysAgo(89);
-    else if (r === "6m") from = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
-    else if (r === "1y") from = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    else if (r === "6m") from = daysAgo(182);
+    else if (r === "1y") from = daysAgo(365);
     else if (r === "week") { var dow = (now.getDay() + 6) % 7; from = daysAgo(dow); }
     else if (r === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
     else if (r === "last-month") { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
@@ -136,7 +136,9 @@
     if (!getToken()) return renderLogin();
     state.busy = true; render();
     var q = rangeBounds();
-    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules"), api("/admin/sales" + q)])
+    // The sales views fail on their own (their columns arrive with migration 0009); the other tabs keep working.
+    var sales = api("/admin/sales" + q).catch(function (e) { if (e.unauthorized) throw e; return { error: e.message || "Could not load." }; });
+    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules"), sales])
       .then(function (r) {
         state.report = r[0]; state.leads = r[1].leads; state.rules = r[2].rules; state.questions = r[2].questions; state.sales = r[3]; state.error = "";
       })

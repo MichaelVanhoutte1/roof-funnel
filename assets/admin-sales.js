@@ -11,7 +11,6 @@
     var n = names && names[email] ? names[email] : email.split("@")[0];
     return n.replace(/(^|\s)\S/g, function (c) { return c.toUpperCase(); });
   }
-  function ratio(n, d) { return d > 0 ? n / d : null; }
   function per(n, d, h) { return d > 0 ? h.money(n / d) : "—"; }
 
   /* RatioBadge: one decimal, green ≥ good, amber ≥ watch, red below; "—" when nothing to divide by. */
@@ -106,8 +105,14 @@
     return rows.reduce(function (t, r) { t.booked += r.booked; t.showed += r.showed; t.closed += r.closed; t.cash += r.cash; return t; }, { booked: 0, showed: 0, closed: 0, cash: 0 });
   }
 
+  function unavailable(box, data, h) {
+    if (!data) { box.appendChild(h.el("p", { class: "muted", text: "Loading…" })); return true; }
+    if (data.error) { box.appendChild(h.el("div", { class: "notice bad", role: "alert", text: "The sales data could not be loaded: " + data.error })); return true; }
+    return false;
+  }
+
   function renderLeaderboard(box, data, h) {
-    if (!data) { box.appendChild(h.el("p", { class: "muted", text: "Loading…" })); return; }
+    if (unavailable(box, data, h)) return;
     var lb = data.leaderboard, t = lb.totals, names = data.names || {};
     var view = ui.view || "closers";
     box.appendChild(strip(h, [
@@ -161,6 +166,7 @@
     if (e.kind === "fathom") return h.el("span", { class: "ev good", text: "Fathom · " + (e.minutes != null ? e.minutes + " min" : "recording") });
     if (e.kind === "call") return h.el("span", { class: "ev good", text: "Call · " + e.minutes + " min" });
     if (r.closed) return h.el("span", { class: "ev good", text: "Closed · verified show" });
+    if (e.kind === "ghl") return h.el("span", { class: "ev warn", text: "GHL status · unverified" });
     return h.el("span", { class: "ev warn", text: "GHL stage · unverified" });
   }
 
@@ -185,8 +191,11 @@
   }
 
   function renderAppointments(box, data, h) {
-    if (!data) { box.appendChild(h.el("p", { class: "muted", text: "Loading…" })); return; }
-    var all = data.appointments, names = data.names || {}, rows = filtered(all);
+    if (unavailable(box, data, h)) return;
+    var all = data.appointments, names = data.names || {};
+    // A rep picked under another date range may not exist in this one: fall back to "all" instead of filtering everything out.
+    ["closer", "setter"].forEach(function (k) { if (ui[k] !== "all" && !all.some(function (r) { return r[k] === ui[k]; })) ui[k] = "all"; });
+    var rows = filtered(all);
     var cancelled = rows.filter(function (r) { return r.status === "cancelled"; }).length;
     box.appendChild(strip(h, [["Appointments", h.num(rows.length)], ["Cancelled", h.num(cancelled), cancelled ? "bad" : ""]]));
 
@@ -213,7 +222,7 @@
     var body = shown.map(function (r) {
       return h.el("tr", null, [
         h.el("td", { class: "left muted", text: r.closer ? repName(r.closer, names) : "—" }),
-        h.el("td", { class: "left" + (r.setter ? "" : " muted"), text: r.setter ? repName(r.setter, names) : "Self-booked" }),
+        h.el("td", { class: "left" + (r.setter ? "" : " muted"), text: r.setter ? repName(r.setter, names) : "Unassigned" }),
         h.el("td", { class: "left medium", text: r.kind === "setter" ? "Setter call" : "Closer call" }),
         h.el("td", { class: "left" }, [h.el("div", { class: "cust", text: r.name || "—" }), r.city ? h.el("div", { class: "muted small", text: r.city }) : null]),
         h.el("td", { class: "left" + (r.credit_score == null ? " muted" : ""), text: r.credit_score == null ? "—" : String(r.credit_score) }),

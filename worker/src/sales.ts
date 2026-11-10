@@ -12,7 +12,6 @@ export type SalesLead = ReportLead & {
   id: number;
   name: string | null;
   city: string | null;
-  appointment_status: string | null;
   setter_host: string | null;
   closer_host: string | null;
   closer_attended_source: string | null;
@@ -39,7 +38,7 @@ export type AppointmentRow = {
   credit_score: number | null;
   stage: string | null;
   /** How the show was established, for the "Recording / note" column. */
-  evidence: { kind: "call" | "meet" | "fathom" | "stage" | "none"; minutes: number | null };
+  evidence: { kind: "call" | "meet" | "fathom" | "stage" | "ghl" | "none"; minutes: number | null };
 };
 
 const CANCELLED = /^cancel/i;
@@ -52,7 +51,9 @@ function setterRow(l: SalesLead, o: Outcome, nowIso: string): AppointmentRow {
   const cancelled = CANCELLED.test(l.appointment_status ?? "");
   const seconds = l.setter_call_seconds ?? 0;
   const status: AppointmentRow["status"] = cancelled && !o.setterShowed ? "cancelled" : o.setterShowed ? "showed" : o.setterNoShow ? "no_show" : isUpcoming(l.appointment_start!, nowIso) ? "confirmed" : "pending";
-  const evidence: AppointmentRow["evidence"] = !o.setterShowed ? { kind: "none", minutes: null } : seconds > 0 ? { kind: "call", minutes: Math.round(seconds / 60) } : { kind: "stage", minutes: null };
+  const evidence: AppointmentRow["evidence"] = !o.setterShowed
+    ? { kind: "none", minutes: null }
+    : seconds >= 120 ? { kind: "call", minutes: Math.round(seconds / 60) } : /^showed$/i.test(l.appointment_status ?? "") && !o.won ? { kind: "ghl", minutes: null } : { kind: "stage", minutes: null };
   return { kind: "setter", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.appointment_start!, ghl_status: l.appointment_status, status, closed: o.won, cash: o.cash, close_date: o.won ? l.pipeline_stage_at : null, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence };
 }
 
@@ -62,7 +63,8 @@ function closerRow(l: SalesLead, o: Outcome, nowIso: string): AppointmentRow {
   const src = l.closer_attended_source;
   const evidence: AppointmentRow["evidence"] = !o.closerShowed
     ? { kind: "none", minutes: null }
-    : src === "google_meet" ? { kind: "meet", minutes: l.closer_minutes } : src === "fathom" ? { kind: "fathom", minutes: l.closer_minutes } : { kind: "stage", minutes: null };
+    : src === "google_meet" ? { kind: "meet", minutes: l.closer_minutes } : src === "fathom" ? { kind: "fathom", minutes: l.closer_minutes }
+    : /^showed$/i.test(l.closer_status ?? "") && !o.won ? { kind: "ghl", minutes: null } : { kind: "stage", minutes: null };
   return { kind: "closer", lead_id: l.id, name: l.name, city: l.city, closer: l.closer_host, setter: l.setter_host, start: l.closer_start!, ghl_status: l.closer_status, status, closed: o.won, cash: o.cash, close_date: o.won ? l.pipeline_stage_at : null, credit_score: l.credit_status === "success" ? l.credit_score : null, stage: l.pipeline_stage, evidence };
 }
 

@@ -25,6 +25,8 @@ export type SyncEnv = {
   DB: D1Database;
   GHL_PIT?: string;
   GHL_LOCATION_ID?: string;
+  /** The funnel's own booking calendar (the setter calls). */
+  GHL_CALENDAR_ID?: string;
   /** Fathom API key of the roof business account (secret). Unset = no Fathom attendance. */
   FATHOM_API_KEY?: string;
   /** Google service-account key (JSON) with domain-wide delegation for meetings.space.readonly; acts as each call's host. */
@@ -41,7 +43,7 @@ export type SyncSummary = {
 
 function ghlConfigOf(env: SyncEnv): GhlConfig | null {
   if (!env.GHL_PIT || !env.GHL_LOCATION_ID) return null;
-  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID, calendarId: "" };
+  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID, calendarId: env.GHL_CALENDAR_ID ?? "" };
 }
 
 function errorText(err: unknown): string {
@@ -200,23 +202,33 @@ export function pickCloserEvents(events: CalendarEvent[]): Map<string, CalendarE
 export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, nowMs: number): Promise<{ events: number; updated: number }> {
   const calendars = await ghl<{ calendars?: Array<{ id: string; name?: string }> }>(cfg, `/calendars/?locationId=${cfg.locationId}`);
   const closer = (calendars.calendars ?? []).filter((c) => /closer/i.test(c.name ?? "")).slice(0, 4);
-  const setter = (calendars.calendars ?? []).filter((c) => /setter/i.test(c.name ?? "")).slice(0, 2);
+  // The setter calendar is the configured booking calendar (GHL_CALENDAR_ID); a "setter" name is the fallback.
+  const setter = (calendars.calendars ?? []).filter((c) => (cfg.calendarId && c.id === cfg.calendarId) || /setter/i.test(c.name ?? "")).slice(0, 2);
+  if (!setter.length) console.error("[sync] no setter calendar found (GHL_CALENDAR_ID unset and no calendar named *setter*); setter appointments not refreshed");
   const events: CalendarEvent[] = [], setterEvents: CalendarEvent[] = [];
   const start = nowMs - 30 * 86_400_000, end = nowMs + 30 * 86_400_000;
+  // Setter calls older than a week do not move any more: a short look-back keeps the statement count small.
+  const setterStart = nowMs - 7 * 86_400_000;
   for (const c of [...closer, ...setter]) {
-    const data = await ghl<{ events?: CalendarEvent[] }>(cfg, `/calendars/events?locationId=${cfg.locationId}&calendarId=${c.id}&startTime=${start}&endTime=${end}`);
-    (closer.includes(c) ? events : setterEvents).push(...(data.events ?? []));
+    const isCloser = closer.includes(c);
+    const data = await ghl<{ events?: CalendarEvent[] }>(cfg, `/calendars/events?locationId=${cfg.locationId}&calendarId=${c.id}&startTime=${isCloser ? start : setterStart}&endTime=${end}`);
+    (isCloser ? events : setterEvents).push(...(data.events ?? []));
   }
   const picked = pickCloserEvents(events), pickedSetter = pickCloserEvents(setterEvents);
   // The host's email is what the Meet API is read as (domain-wide delegation acts as the host). One users call per sync.
   const hosts = await hostEmails(db, cfg, [...picked.values(), ...pickedSetter.values()].map((e) => e.assignedUserId ?? ""));
   // Setter appointments were written once at booking; GHL is the truth for reschedules, cancellations and the assigned setter.
-  const setterStatements = [...pickedSetter.entries()].map(([contactId, e]) =>
-    db.prepare(
-      `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_status = ?3, setter_host = COALESCE(?4, setter_host)
-       WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
-         AND (appointment_id IS NOT ?1 OR appointment_start IS NOT ?2 OR appointment_status IS NOT ?3 OR (?4 IS NOT NULL AND setter_host IS NOT ?4))`,
-    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, hosts?.get(e.assignedUserId ?? "") ?? null, contactId));
+  // The row that already holds this appointment wins (a returning applicant can have a newer row with the same GHL
+  // contact id; copying the booking onto it would count the call twice). A genuinely new booking lands on the newest row.
+  // At most one batch (50) per run, newest calls first; the rest catch up on the next tick.
+  const setterStatements = [...pickedSetter.entries()]
+    .sort((a, b) => (isoOrNull(b[1].startTime) ?? "").localeCompare(isoOrNull(a[1].startTime) ?? "")).slice(0, 50)
+    .map(([contactId, e]) =>
+      db.prepare(
+        `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_status = ?3, setter_host = COALESCE(?4, setter_host)
+         WHERE id = COALESCE((SELECT MAX(id) FROM leads WHERE appointment_id = ?1), (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5))
+           AND (appointment_id IS NOT ?1 OR appointment_start IS NOT ?2 OR appointment_status IS NOT ?3 OR (?4 IS NOT NULL AND setter_host IS NOT ?4))`,
+      ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, hosts?.get(e.assignedUserId ?? "") ?? null, contactId));
   // "Showed" sticks (a follow-up call does not undo the first one). Otherwise a different appointment, or the
   // same one moved to another time, starts with unknown attendance again. The newest lead row per contact only.
   const keep = "((closer_appointment_id IS ?1 AND closer_start IS ?2) OR closer_attended = 'showed')";
@@ -230,7 +242,11 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
        WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
          AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4 OR (?6 IS NOT NULL AND closer_host IS NOT ?6))`,
     ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId, hosts?.get(e.assignedUserId ?? "") ?? null));
-  return { events: events.length + setterEvents.length, updated: await runBatches(db, [...statements, ...setterStatements]) };
+  // Separate batches: a D1 batch is atomic, and the setter columns only exist from migration 0009 on.
+  const updated = await runBatches(db, statements);
+  let setterUpdated = 0;
+  try { setterUpdated = await runBatches(db, setterStatements); } catch (err) { console.error("[sync] setter appointment refresh failed (migration 0009 applied?):", errorText(err)); }
+  return { events: events.length + setterEvents.length, updated: updated + setterUpdated };
 }
 
 type GhlUser = { id: string; email?: string | null; name?: string | null; firstName?: string | null; lastName?: string | null };
@@ -425,12 +441,13 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
   if (cfg) {
     try { summary.pipeline = await syncPipeline(env.DB, cfg); } catch (err) { summary.pipeline = { error: errorText(err) }; }
     try { summary.closerAppointments = await syncCloserAppointments(env.DB, cfg, nowMs); } catch (err) { summary.closerAppointments = { error: errorText(err) }; }
-    // Budget per run (Workers free plan: 50 subrequests, D1 calls included): D1 ~ 8–14 (pipeline batches of 50 contacts,
-    // closer batch, setter SELECT/COUNT/batch, attendance SELECT/batch, settings). Fetch: pipeline <= 7, calendars
-    // <= 8 (list, <= 4 closer, <= 2 setter, users), call logs 2 per lead, attendance <= 3 with Fathom or <= 12 with Google Meet (<= 2 tokens + for
-    // each of 2 leads: 1 list + <= 2 participants, + 1 fallback list + 1). Meet: 7+8+6+12 = 33 fetch + 14 D1 = 47.
+    // Budget per run (Workers free plan: 50 subrequests, D1 calls included).
+    // D1 ≈ 12: pipeline ceil(contacts/50) (~3), closer batch 1, setter batch 1, ghl_users 1, setter calls 3, attendance 2, sync_status 1.
+    // Fetch: pipeline <= 7, calendars <= 8 (list, <= 4 closer, <= 2 setter, users), call logs 2 per lead, attendance <= 3 with
+    // Fathom or <= 14 with Google Meet (<= 2 tokens + per lead: 1 list + <= 2 participants, then fallback 1 list + <= 2).
+    // Meet on: 7 + 8 + 4 + 14 = 33 fetch + 12 D1 = 45.
     const meetOn = !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
-    const callLogs = meetOn ? 3 : 12;
+    const callLogs = meetOn ? 2 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
   }
   try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 2); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }

@@ -63,7 +63,7 @@ function isoParam(v: string | null, fallback: string): string {
   return Number.isFinite(t) ? new Date(t).toISOString() : fallback;
 }
 
-const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start,
+const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start, appointment_status,
   pipeline_stage, opportunity_status, opportunity_value, setter_calls, setter_call_seconds, closer_appointment_id, closer_start,
   closer_status, closer_attended, credit_status, credit_score, credit_offer_amount_1, credit_offer_amount_2`;
 
@@ -106,8 +106,8 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
   if (request.method === "GET" && path === "/admin/sales") {
     // Appointments placed in the range by their own start time (a lead applied in October can have a call in November).
     const { results } = await env.DB.prepare(
-      `SELECT id, name, city, appointment_status, setter_host, closer_host, closer_attended_source, closer_minutes, pipeline_stage_at, ${REPORT_COLUMNS} FROM leads
-       WHERE (appointment_start >= ?1 AND appointment_start < ?2) OR (closer_start >= ?1 AND closer_start < ?2) LIMIT 5000`,
+      `SELECT id, name, city, setter_host, closer_host, closer_attended_source, closer_minutes, pipeline_stage_at, ${REPORT_COLUMNS} FROM leads
+       WHERE (appointment_start >= ?1 AND appointment_start < ?2) OR (closer_start >= ?1 AND closer_start < ?2) ORDER BY id DESC LIMIT 5000`,
     ).bind(from, to).all<SalesLead>();
     const appointments = buildAppointments(results, from, to, nowIso);
     const names = await env.DB.prepare("SELECT value FROM settings WHERE key = 'ghl_users'").first<{ value: string }>();
