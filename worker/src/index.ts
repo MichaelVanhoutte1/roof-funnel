@@ -493,9 +493,10 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
   if (partial) {
     // An abandoned retry by someone the credit rules already turned away is not a qualified lead again.
     if (answersQualify(rules, answers)) turnedAwayBefore = await creditDisqualifiedBefore(env, row.phone);
-    // The phone step's save: start the soft credit check now, so the full submit a few seconds later finds the
-    // result on the row and routes without waiting. Only for a lead the answers so far keep qualified.
-    if (s.consent && answersQualify(rules, answers) && !turnedAwayBefore && creditCheckEnabled(env)) {
+    // Start the soft credit check as soon as a qualified lead has a phone: the phone step's save (so the full submit a
+    // few seconds later finds the result and routes without waiting) and abandonment saves alike. Michael's ruling
+    // (2026-11-10): the disclosure under the phone field is the consent, whether or not Continue was pressed.
+    if (answersQualify(rules, answers) && !turnedAwayBefore && creditCheckEnabled(env)) {
       credit = creditFlow(env, row, meta, { consent: true, qualified: true });
     }
   } else {
