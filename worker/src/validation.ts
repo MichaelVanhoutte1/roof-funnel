@@ -353,8 +353,6 @@ export function classifyFullSubmission(input: LeadInput, cfg: FakeLeadConfig = {
   if (!city) return { outcome: "reject", error: "Please enter your city." };
   const name = (input.name ?? "").trim();
   if (!name) return { outcome: "reject", error: "Please enter your real name." };
-  // First and last name: the credit check cannot match a one-word name (Michael, 2026-11-10: 9 leads slipped through unchecked).
-  if (name.split(/\s+/).filter(Boolean).length < 2) return { outcome: "reject", error: "Please enter your first and last name." };
   if (!isValidEmail(input.email)) return { outcome: "reject", error: "Please enter a valid email address." };
   const phoneGate = classifyPhone(input.phone);
   if (phoneGate.outcome !== "ok") return phoneGate;
@@ -364,6 +362,9 @@ export function classifyFullSubmission(input: LeadInput, cfg: FakeLeadConfig = {
   if (isObviousFakePhone10(digits)) return { outcome: "ghost", reason: "fake_phone" };
   if (isObviousFakeEmail(input.email)) return { outcome: "ghost", reason: "fake_email" };
   if (isFakeLeadIdentity({ name, email: input.email, digits10: digits }, cfg)) return { outcome: "ghost", reason: "fake_identity" };
+  // After the fake-lead checks, so junk still ghosts silently. First and last name: the credit check cannot match a
+  // one-word name (Michael, 2026-11-10: 9 leads slipped through unchecked).
+  if (name.split(/\s+/).filter(Boolean).length < 2) return { outcome: "reject", error: "Please enter your first and last name." };
   return { outcome: "process" };
 }
 
