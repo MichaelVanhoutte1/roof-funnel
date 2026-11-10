@@ -163,6 +163,17 @@ inlined as base64 on the GHL pages were decoded into real files under `assets/`.
 
 ## Tracking and third-party hooks
 
+Cortana (ad attribution) gets one webhook per step, `CORTANA_WEBHOOKS` in `wrangler.toml` (`worker/src/cortana.ts`):
+
+- survey steps `q1`…`q5`, `email`, `phone`, `qualified`: relayed server-side as they happen (`POST /event`, the lead handlers);
+- stage milestones `setter_self_booked`, `setter_qualified`, `setter_disqualified`, `closer_booked`: read off the lead row
+  (the funnel's own booking = `booked_at`; the GHL pipeline stage and closer appointment the outcome sync copies) and posted
+  once per lead by the second cron (`5-55/10 * * * *`, 14 posts per run, `cortana_sent` claim table; `/book` posts its own
+  booking straight away). This is what fills Cortana's stage columns; leads that reached a milestone before the webhook
+  existed are caught up a batch per run. A key with no https URL is never posted — paste the step's webhook URL from Cortana
+  to switch that column on. Every body carries the lead at the top level (`email`, `phone`, `first_name`, `last_name`) plus
+  the flattened tracking, with `timestamp` = when the milestone happened as far as the row knows.
+
 The funnel-level HEAD tracking code (Spendback pixel, five Meta pixels, Callix attribution) is in
 every page's `<head>` between the `Funnel HEAD tracking code` comments. The funnel-level BODY code
 on GHL could only run through `<img onerror>` hacks; here its two effects are plain markup instead:
