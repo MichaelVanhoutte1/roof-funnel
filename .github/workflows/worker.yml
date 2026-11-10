@@ -45,6 +45,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 549e080ff07b6f05b5f42054ad5153fb
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,9 +60,7 @@ jobs:
       # Worker secrets = Doppler roofreju-csp / prd (the Worker's own names). Needs repo secret DOPPLER_TOKEN
       # (a Doppler service token with read access to that config); skipped until it exists.
       - name: Sync Worker secrets from Doppler
-        if: ${{ secrets.DOPPLER_TOKEN != '' }}
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        if: env.DOPPLER_TOKEN != ''
         run: |
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
           doppler secrets download --no-file --format json \
