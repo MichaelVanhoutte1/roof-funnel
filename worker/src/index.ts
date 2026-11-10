@@ -32,6 +32,7 @@ import { maskEmail, maskName, maskPhone } from "./log-mask.ts";
 import { creditAlertMessage, creditProblemMessage, leadAlertMessage, leadWithdrawnMessage, postSlack } from "./slack.ts";
 import { identityKey, offerAmounts, runPreQualification, type CreditReport, type CreditResult } from "./simplecheck.ts";
 import { answerDqReason, answersQualify, creditDqReason, creditRulesApply, publicDqKind, type Answers, type Rules } from "./rules.ts";
+import { lookupPhone, phoneLookupConfig, type LineType, type PhoneLookup } from "./phone-lookup.ts";
 import { handleAdmin, loadRules } from "./admin.ts";
 import { runOutcomeSync } from "./outcomes.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
@@ -68,6 +69,10 @@ export interface Env {
   SIMPLECHECK_DAILY_CAP?: string;
   /** Local runs only: point the check at a stub on localhost. Any other host is ignored. */
   SIMPLECHECK_API_URL?: string;
+  /** Twilio Lookup (carrier check of the applicant's phone). All three or nothing; unset = no lookups. */
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_API_KEY_SID?: string;
+  TWILIO_API_KEY_SECRET?: string;
   /** Closer-call attendance for the roof business (all optional; see outcomes.ts). */
   FATHOM_API_KEY?: string;
   GOOGLE_MEET_SERVICE_ACCOUNT?: string;
@@ -401,6 +406,13 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
 
   const digits = normalizePhoneDigits10(input.phone)!;
   const phone = `+1${digits}`;
+  // Carrier lookup, once per number: an unassigned number is refused here (the survey shows it on the phone step);
+  // the line type is kept on the row below. The lookup failing never blocks the lead.
+  const lookup = await phoneLookupOnce(env, phone);
+  if (lookup && !lookup.valid) {
+    console.log(`[${tag}] phone not assigned — rejected`, maskPhone(phone));
+    return json({ ok: false, error: "That phone number doesn't look reachable. Please enter your mobile number." }, 400, cors);
+  }
   const supersededDigits = normalizePhoneDigits10(str(body.superseded_phone, 40));
   const superseded_phone = supersededDigits && `+1${supersededDigits}` !== phone ? `+1${supersededDigits}` : undefined;
   const email = isValidEmail(input.email) ? input.email.trim() : undefined;
@@ -430,6 +442,7 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
     meta,
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", row.route, "country:", country);
+  if (lookup?.fresh) ctx.waitUntil(storePhoneLookup(env, row.id, lookup));
 
   // The lead is stored. Everything else is registered up front, so it finishes even if the visitor closes the
   // tab while a credit rule is still waiting on the check.
@@ -449,6 +462,32 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   if (partial) return json({ ok: true, partial_saved: true }, 200, cors);
   const qualified = dqReason === null;
   return json({ ok: true, lead_id: row.id, route: qualified ? "calendar" : "dq", qualified, ...(qualified ? {} : { dq: publicDqKind(dqReason) }) }, 200, cors);
+}
+
+/**
+ * The carrier lookup for a number: what an earlier save already stored, else Twilio now (null when not configured
+ * or Twilio could not be asked). `fresh` = this request asked, so the answer still has to be written to the row.
+ */
+async function phoneLookupOnce(env: Env, phone: string): Promise<(PhoneLookup & { fresh: boolean }) | null> {
+  const cfg = phoneLookupConfig(env);
+  if (!cfg) return null;
+  try {
+    const prior = await env.DB.prepare("SELECT phone_line_type, phone_carrier FROM leads WHERE phone = ?1 AND phone_lookup_at IS NOT NULL ORDER BY id DESC LIMIT 1")
+      .bind(phone).first<{ phone_line_type: string | null; phone_carrier: string | null }>();
+    if (prior?.phone_line_type) return { valid: prior.phone_line_type !== "invalid", type: prior.phone_line_type as LineType, carrier: prior.phone_carrier, fresh: false };
+  } catch (err) {
+    console.error("[phone] stored lookup unreadable:", String(err).slice(0, 120)); // the column may not exist yet
+  }
+  const fresh = await lookupPhone(cfg, phone);
+  return fresh ? { ...fresh, fresh: true } : null;
+}
+
+async function storePhoneLookup(env: Env, rowId: number, lookup: PhoneLookup): Promise<void> {
+  try {
+    await env.DB.prepare(`UPDATE leads SET phone_line_type = ?1, phone_carrier = ?2, phone_lookup_at = ${SQL_NOW} WHERE id = ?3`).bind(lookup.type, lookup.carrier, rowId).run();
+  } catch (err) {
+    console.error("[phone] lookup not stored for lead", rowId, String(err).slice(0, 120));
+  }
 }
 
 type SettleInput = {

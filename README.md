@@ -46,8 +46,11 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
   (a partial never overwrites a full; a full upgrades the partial, also under `superseded_phone`) →
   GHL inbound webhook pushed in the background with `ghl_status` recorded on the row.
 - `GET /leads?since=<ISO>&limit=<n>` with `Authorization: Bearer <ADMIN_TOKEN>`: JSON export.
-- Secrets (`npx wrangler secret put`): `GHL_WEBHOOK_URL` (LeadConnector inbound-webhook workflow URL;
-  until set, rows get `ghl_status=skipped`), `ADMIN_TOKEN`. Optional vars:
+- Secrets (Doppler `roofreju-csp`/`prd`, synced on deploy): `GHL_WEBHOOK_URL` (LeadConnector inbound-webhook workflow URL;
+  until set, rows get `ghl_status=skipped`), `ADMIN_TOKEN`, and `TWILIO_ACCOUNT_SID` + `TWILIO_API_KEY_SID` +
+  `TWILIO_API_KEY_SECRET` for the carrier lookup of each applicant's phone (Twilio Lookup v2 line type; an
+  unprovisioned number is refused at the phone step, VoIP / landline is shown on the Leads tab; unset = no lookups;
+  Stone Systems' Twilio account for now — Michael, 2026-11-10). Optional vars:
   `FAKE_LEAD_TEST_PHONE_PREFIXES`, `FAKE_LEAD_INTERNAL_EMAIL_DOMAINS`.
 - Laptop copies of the secrets live in Doppler project `roofreju-csp` (config `dev`; `doppler.yaml` in the repo root,
   `doppler setup --no-interactive` once per clone). The Worker itself reads `wrangler secret put` values, not Doppler;
