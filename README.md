@@ -184,3 +184,20 @@ Leftovers from the original page, by design (1:1 copy):
 
 GitHub Pages, branch `main`, root. `CNAME` holds the custom domain. DNS is a flattened CNAME at the
 apex of `startroofrejuvenating.com` (Cloudflare, DNS-only) pointing at `michaelvanhoutte1.github.io`.
+
+### Deploys: merge to `main` and nothing else
+
+- **Site + admin page:** GitHub Pages rebuilds from `main` on every push (bump `?v=` in `admin/index.html`
+  when `assets/admin*.js|css` change, or browsers keep the old file).
+- **Worker + D1:** `.github/workflows/worker.yml`. Pull requests run the typecheck and unit tests; a push to
+  `main` touching `worker/` runs them again, then `wrangler d1 migrations apply --remote`, then
+  `wrangler deploy`. Needs one repository secret, `CLOUDFLARE_API_TOKEN` (Cloudflare token with
+  *Workers Scripts: Edit* + *D1: Edit* on the account); the account id is in the workflow.
+- **Worker secrets:** Doppler project `roofreju-csp`, config `prd`, holds them under the Worker's own names
+  (`ADMIN_TOKEN`, `GHL_PIT`, `SIMPLECHECK_API_TOKEN`, `SLACK_LEAD_ALERTS_WEBHOOK`,
+  `GOOGLE_MEET_SERVICE_ACCOUNT`, `FATHOM_API_KEY`, …) and the Doppler → Cloudflare Workers integration
+  syncs that config to `roof-funnel-api`. Add or rotate a secret in Doppler `prd` and it is on the Worker
+  within a minute; never `wrangler secret put` by hand. Config `dev` keeps the laptop-side names
+  (`ROOF_FUNNEL_*`) that the scripts read.
+- **Branches:** one PR per piece of work, always against `main`. A PR stacked on another branch merges
+  into *that branch* when its base is not re-targeted, and nothing ships.

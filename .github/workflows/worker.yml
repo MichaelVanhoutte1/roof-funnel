@@ -1,0 +1,57 @@
+# Worker CI + deploy.
+#  - every pull request: typecheck + unit tests (blocks the merge when red);
+#  - every push to main that touches worker/: the same checks, then D1 migrations, then `wrangler deploy`.
+# The static site (admin page included) is GitHub Pages from main, so it ships on the same merge without a step here.
+# Worker secrets are NOT set here: Doppler (project roofreju-csp, config prd) syncs them to the Worker directly.
+name: Worker
+
+on:
+  pull_request:
+    paths: ["worker/**", ".github/workflows/worker.yml"]
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/worker.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: worker-${{ github.event_name == 'push' && 'deploy' || github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: worker
+
+jobs:
+  check:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npm test
+
+  deploy:
+    name: Migrate D1 & deploy
+    needs: check
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 549e080ff07b6f05b5f42054ad5153fb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      # Migrations first: the old code tolerates new columns, the new code may need them.
+      - run: npx wrangler d1 migrations apply roof-funnel-leads --remote
+      - run: npx wrangler deploy
