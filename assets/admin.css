@@ -75,3 +75,52 @@ table.seg th.grp,table.seg td.grp{border-left:1px solid var(--border)}
 table.seg td{padding:10px 8px;font-weight:500}
 table.seg td.segment{font-weight:600;color:var(--heading)}
 table.seg td.muted{color:var(--muted);font-weight:400}
+
+/* ---------- Sales Leaderboard / Appointments (CSP look) ---------- */
+.strip{display:flex;border:1px solid var(--border);border-radius:8px;background:var(--card);margin-bottom:20px;overflow:hidden}
+.strip-cell{flex:1;padding:10px 16px;border-left:1px solid var(--border)}
+.strip-cell:first-child{border-left:0}
+.strip-v{font-size:20px;font-weight:600;color:var(--heading);font-variant-numeric:tabular-nums}
+.strip-v.good{color:var(--good)}.strip-v.primary{color:var(--primary)}.strip-v.bad{color:var(--bad)}
+.strip-l{font-size:12px;color:var(--muted)}
+.sales-card{padding:0;overflow:hidden}
+.card-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px 12px}
+.card-head h2{margin:0}
+.card-right{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.toggle{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.toggle-b{border:0;background:var(--card);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text)}
+.toggle-b+.toggle-b{border-left:1px solid var(--border)}
+.toggle-b[aria-selected=true]{background:rgba(14,127,166,.1);color:var(--primary);font-weight:600}
+.ranked-by{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:13px}
+.ranked-l{padding:6px 10px;background:var(--bg);color:var(--muted);border-right:1px solid var(--border)}
+.ranked-by select{border:0;background:var(--card);padding:6px 10px;font-size:13px}
+table.lb{font-size:15px;font-variant-numeric:tabular-nums;min-width:900px}
+table.lb th{height:44px;font-size:12px;font-weight:500;color:var(--muted);text-transform:none;padding:0 12px}
+table.lb td{padding:14px 12px}
+table.lb td.name{font-weight:600;color:var(--heading)}
+table.lb td.name.first{color:#A16207}
+table.lb tr.top td{background:rgba(238,244,248,.5)}
+table.lb tfoot td{background:rgba(238,244,248,.9);border-top:2px solid var(--border);font-weight:500}
+table.lb .total-l{font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.04em;color:var(--primary)}
+table.lb td.strong{font-weight:600}
+.rank-ic{font-size:16px}.rank-n{font-weight:600}
+th.left,td.left{text-align:left}
+.pill.outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.pill.blue{background:#DCEBFA;color:#1D4ED8}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:16px 20px 12px}
+.toolbar-r{display:flex;gap:8px}
+input.search{flex:1;min-width:240px;max-width:420px;border:1px solid var(--border);border-radius:8px;padding:7px 12px;background:var(--card)}
+.btn .count{display:inline-block;margin-left:6px;background:var(--bg);border-radius:999px;padding:0 7px;font-size:12px;font-weight:600}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;padding:0 20px 14px}
+.f-row{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.f-row select{border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--card);font-size:14px;color:var(--text)}
+.link{border:0;background:none;color:var(--primary);cursor:pointer;padding:0;font-size:13px;grid-column:1/-1;justify-self:start}
+table.appts{font-size:14px}
+table.appts th{height:40px;font-size:12px;font-weight:500;color:var(--muted);text-transform:none;padding:0 12px}
+table.appts td{padding:8px 12px;vertical-align:top}
+table.appts td.medium{font-weight:500}
+.cust{font-weight:500;color:var(--heading)}
+.ev{font-size:13px;font-weight:500}.ev.good{color:var(--good)}.ev.warn{color:var(--warn)}.ev.bad{color:var(--bad)}
+.empty{padding:28px 20px;text-align:center}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--border)}

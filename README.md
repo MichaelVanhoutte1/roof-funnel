@@ -97,6 +97,12 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
 
 - **Overview** (`report.ts`): leads, book %, setter show %, closer show %, close % and cash per booked call, per answer,
   credit band, funnel result, ad source and device.
+- **Sales Leaderboard** and **Appointments** (`sales.ts`, `assets/admin-sales.js`, `GET /admin/sales`): the same views as
+  CSP's `/commission-tracker` and `/sales-appointments`, read-only. One row per appointment (setter call from the funnel,
+  closer call from the closer calendars), placed in the date range by its own start time. Leaderboard per closer
+  (total appts, taken, show rate, closed, close rate, cash, AOV, $/taken, $/booked; "Ranked by" cash / close rate / AOV /
+  $ per taken) and per setter (booked, showed, show rate, closed, close rate, cash basis, AOV); a close is attributed to
+  the rep who held that lead's call. Reps are GHL users (`setter_host`, `closer_host`, names cached in `settings.ghl_users`).
 - **Rules** (`rules.ts`, stored in D1 `settings.rules`): a disqualify switch per answer plus credit rules (minimum score,
   minimum financing offered, minimum income, no credit file, credit freeze). Defaults = only the "No" capital answer.
   A disqualified lead is stored with `route = 'dq'` and `dq_reason` (`answer:<question>` / `credit:<rule>`) and never sees
@@ -125,7 +131,7 @@ It calls the Worker's `/admin/*` endpoints (`worker/src/admin.ts`, bearer token,
 - Pipeline stage names are mapped in `report.ts` (`STAGE_FACTS`). A renamed or new stage shows up on the page as
   "not recognised" until it is added there.
 - A sync run is budgeted for the Workers free plan (under 50 subrequests, D1 calls included): 12 call logs per run
-  (4 when Meet is on) and 2 closer calls; the arithmetic is in `runOutcomeSync`.
+  (3 when Meet is on) and 2 closer calls; the arithmetic is in `runOutcomeSync`.
 
 ## Native booking step
 

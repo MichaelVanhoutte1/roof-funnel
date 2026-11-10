@@ -193,19 +193,30 @@ export function pickCloserEvents(events: CalendarEvent[]): Map<string, CalendarE
   return best;
 }
 
-/** Calendars whose name contains "closer" hold the closer calls (Closer Calendar, Closer Followup Calendar). */
+/**
+ * Calendars whose name contains "closer" hold the closer calls (Closer Calendar, Closer Followup Calendar); the one whose
+ * name contains "setter" holds the funnel's own bookings, refreshed here so status, time and assigned setter follow GHL.
+ */
 export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, nowMs: number): Promise<{ events: number; updated: number }> {
   const calendars = await ghl<{ calendars?: Array<{ id: string; name?: string }> }>(cfg, `/calendars/?locationId=${cfg.locationId}`);
   const closer = (calendars.calendars ?? []).filter((c) => /closer/i.test(c.name ?? "")).slice(0, 4);
-  const events: CalendarEvent[] = [];
+  const setter = (calendars.calendars ?? []).filter((c) => /setter/i.test(c.name ?? "")).slice(0, 2);
+  const events: CalendarEvent[] = [], setterEvents: CalendarEvent[] = [];
   const start = nowMs - 30 * 86_400_000, end = nowMs + 30 * 86_400_000;
-  for (const c of closer) {
+  for (const c of [...closer, ...setter]) {
     const data = await ghl<{ events?: CalendarEvent[] }>(cfg, `/calendars/events?locationId=${cfg.locationId}&calendarId=${c.id}&startTime=${start}&endTime=${end}`);
-    events.push(...(data.events ?? []));
+    (closer.includes(c) ? events : setterEvents).push(...(data.events ?? []));
   }
-  const picked = pickCloserEvents(events);
+  const picked = pickCloserEvents(events), pickedSetter = pickCloserEvents(setterEvents);
   // The host's email is what the Meet API is read as (domain-wide delegation acts as the host). One users call per sync.
-  const hosts = await hostEmails(cfg, [...picked.values()].map((e) => e.assignedUserId ?? ""));
+  const hosts = await hostEmails(db, cfg, [...picked.values(), ...pickedSetter.values()].map((e) => e.assignedUserId ?? ""));
+  // Setter appointments were written once at booking; GHL is the truth for reschedules, cancellations and the assigned setter.
+  const setterStatements = [...pickedSetter.entries()].map(([contactId, e]) =>
+    db.prepare(
+      `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_status = ?3, setter_host = COALESCE(?4, setter_host)
+       WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
+         AND (appointment_id IS NOT ?1 OR appointment_start IS NOT ?2 OR appointment_status IS NOT ?3 OR (?4 IS NOT NULL AND setter_host IS NOT ?4))`,
+    ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, hosts?.get(e.assignedUserId ?? "") ?? null, contactId));
   // "Showed" sticks (a follow-up call does not undo the first one). Otherwise a different appointment, or the
   // same one moved to another time, starts with unknown attendance again. The newest lead row per contact only.
   const keep = "((closer_appointment_id IS ?1 AND closer_start IS ?2) OR closer_attended = 'showed')";
@@ -219,21 +230,30 @@ export async function syncCloserAppointments(db: D1Database, cfg: GhlConfig, now
        WHERE id = (SELECT MAX(id) FROM leads WHERE ghl_contact_id = ?5)
          AND (closer_appointment_id IS NOT ?1 OR closer_start IS NOT ?2 OR closer_status IS NOT ?3 OR closer_meet_code IS NOT ?4 OR (?6 IS NOT NULL AND closer_host IS NOT ?6))`,
     ).bind(e.id, isoOrNull(e.startTime), e.appointmentStatus ?? null, meetCode(e.address), contactId, hosts?.get(e.assignedUserId ?? "") ?? null));
-  return { events: events.length, updated: await runBatches(db, statements) };
+  return { events: events.length + setterEvents.length, updated: await runBatches(db, [...statements, ...setterStatements]) };
 }
 
-type GhlUser = { id: string; email?: string | null };
+type GhlUser = { id: string; email?: string | null; name?: string | null; firstName?: string | null; lastName?: string | null };
 
 /**
  * GHL user id → lower-cased email for the ids given (needs the `users.readonly` scope on the PIT). Skipped (no request)
  * when no event names a host. On failure returns null and the stored hosts are left untouched (COALESCE in the write).
  */
-async function hostEmails(cfg: GhlConfig, userIds: string[]): Promise<Map<string, string> | null> {
+async function hostEmails(db: D1Database, cfg: GhlConfig, userIds: string[]): Promise<Map<string, string> | null> {
   const out = new Map<string, string>();
   if (!userIds.some(Boolean)) return out;
   try {
     const data = await ghl<{ users?: GhlUser[] }>(cfg, `/users/?locationId=${cfg.locationId}`);
-    for (const u of data.users ?? []) if (u.id && u.email) out.set(u.id, u.email.trim().toLowerCase());
+    const names: Record<string, string> = {};
+    for (const u of data.users ?? []) {
+      if (!u.id || !u.email) continue;
+      const email = u.email.trim().toLowerCase();
+      out.set(u.id, email);
+      const name = (u.name ?? `${u.firstName ?? ""} ${u.lastName ?? ""}`).trim();
+      if (name) names[email] = name;
+    }
+    // Display names for the leaderboard / appointments pages (emails are the keys everywhere else).
+    await db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('ghl_users', ?1, ${SQL_NOW}) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).bind(JSON.stringify(names)).run();
     return out;
   } catch (err) {
     console.error("[sync] GHL users lookup failed; closer hosts left as they were:", errorText(err));
@@ -406,11 +426,11 @@ export async function runOutcomeSync(env: SyncEnv, nowMs: number = Date.now()): 
     try { summary.pipeline = await syncPipeline(env.DB, cfg); } catch (err) { summary.pipeline = { error: errorText(err) }; }
     try { summary.closerAppointments = await syncCloserAppointments(env.DB, cfg, nowMs); } catch (err) { summary.closerAppointments = { error: errorText(err) }; }
     // Budget per run (Workers free plan: 50 subrequests, D1 calls included): D1 ~ 8–14 (pipeline batches of 50 contacts,
-    // closer batch, setter SELECT/COUNT/batch, attendance SELECT/batch, settings). Fetch: pipeline <= 7, closer calendars
-    // <= 6 (incl. users), call logs 2 per lead, attendance <= 3 with Fathom or <= 12 with Google Meet (<= 2 tokens + for
-    // each of 2 leads: 1 list + <= 2 participants, + 1 fallback list + 1). Meet: 7+6+8+12 = 33 fetch + 14 D1 = 47.
+    // closer batch, setter SELECT/COUNT/batch, attendance SELECT/batch, settings). Fetch: pipeline <= 7, calendars
+    // <= 8 (list, <= 4 closer, <= 2 setter, users), call logs 2 per lead, attendance <= 3 with Fathom or <= 12 with Google Meet (<= 2 tokens + for
+    // each of 2 leads: 1 list + <= 2 participants, + 1 fallback list + 1). Meet: 7+8+6+12 = 33 fetch + 14 D1 = 47.
     const meetOn = !!parseServiceAccount(env.GOOGLE_MEET_SERVICE_ACCOUNT);
-    const callLogs = meetOn ? 4 : 12;
+    const callLogs = meetOn ? 3 : 12;
     try { summary.setterCalls = await syncSetterCalls(env.DB, cfg, callLogs); } catch (err) { summary.setterCalls = { error: errorText(err) }; }
   }
   try { summary.closerAttendance = await syncCloserAttendance(env, nowMs, 2); } catch (err) { summary.closerAttendance = { error: errorText(err) }; }

@@ -15,7 +15,7 @@
   if (isLocal && override) API = override.replace(/\/+$/, ""); // local preview against a local Worker only
 
   var TOKEN_KEY = "rf_admin_key";
-  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, rules: null, questions: [], busy: false, open: {} };
+  var state = { tab: "overview", range: "month", from: "", to: "", report: null, leads: null, sales: null, rules: null, questions: [], busy: false, open: {} };
 
   /* sessionStorage, not localStorage: the key is visible to this tab only, which loads no third-party script.
      (The public funnel pages on this domain load vendor scripts; those must never be able to read it.) */
@@ -63,12 +63,24 @@
 
   /* ---------------- date range ---------------- */
   function rangeBounds() {
+    // Same presets as CSP's DateRangePicker. "to" is exclusive; future-dated appointments are included when it is open.
     var now = new Date(), from = null, to = null;
-    if (state.range === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
-    else if (state.range === "last-month") { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
-    else if (state.range === "7") from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-    else if (state.range === "30") from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
-    else if (state.range === "custom") {
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var daysAgo = function (n) { return new Date(now.getFullYear(), now.getMonth(), now.getDate() - n); };
+    var r = state.range;
+    if (r === "today") { from = today; to = daysAgo(-1); }
+    else if (r === "yesterday") { from = daysAgo(1); to = today; }
+    else if (r === "7") from = daysAgo(6);
+    else if (r === "14") from = daysAgo(13);
+    else if (r === "30") from = daysAgo(29);
+    else if (r === "90") from = daysAgo(89);
+    else if (r === "6m") from = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+    else if (r === "1y") from = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    else if (r === "week") { var dow = (now.getDay() + 6) % 7; from = daysAgo(dow); }
+    else if (r === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
+    else if (r === "last-month") { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (r === "quarter") from = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    else if (r === "custom") {
       if (state.from) from = new Date(state.from + "T00:00:00");
       if (state.to) { to = new Date(state.to + "T00:00:00"); to.setDate(to.getDate() + 1); }
     }
@@ -104,9 +116,9 @@
     if (!getToken()) return renderLogin();
     state.busy = true; render();
     var q = rangeBounds();
-    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules")])
+    Promise.all([api("/admin/report" + q), api("/admin/leads" + q), api("/admin/rules"), api("/admin/sales" + q)])
       .then(function (r) {
-        state.report = r[0]; state.leads = r[1].leads; state.rules = r[2].rules; state.questions = r[2].questions; state.error = "";
+        state.report = r[0]; state.leads = r[1].leads; state.rules = r[2].rules; state.questions = r[2].questions; state.sales = r[3]; state.error = "";
       })
       .catch(function (e) {
         if (e.unauthorized) { state.busy = false; return renderLogin("That key was not accepted."); }
@@ -308,11 +320,10 @@
   /* ---------------- shell ---------------- */
   function render() {
     root.innerHTML = "";
-    var range = el("select", { "aria-label": "Date range" }, [
-      el("option", { value: "month", text: "This month" }), el("option", { value: "last-month", text: "Last month" }),
-      el("option", { value: "7", text: "Last 7 days" }), el("option", { value: "30", text: "Last 30 days" }),
-      el("option", { value: "all", text: "All time" }), el("option", { value: "custom", text: "Custom dates" }),
-    ]);
+    var presets = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["90", "Last 90 days"],
+      ["6m", "Last 6 months"], ["1y", "Last year"], ["week", "This week"], ["month", "This month"], ["last-month", "Last month"], ["quarter", "This quarter"],
+      ["all", "All time"], ["custom", "Custom dates"]];
+    var range = el("select", { "aria-label": "Date range" }, presets.map(function (p) { return el("option", { value: p[0], text: p[1] }); }));
     range.value = state.range;
     range.addEventListener("change", function () { state.range = range.value; if (state.range !== "custom") load(); else render(); });
     var custom = null;
@@ -336,7 +347,7 @@
       el("button", { type: "button", class: "btn", text: "Refresh", on: { click: load } }), sync,
       el("button", { type: "button", class: "btn", text: "Sign out", on: { click: function () { setToken(""); renderLogin(); } } }),
     ]));
-    var tabs = [["overview", "Overview"], ["leads", "Leads"], ["rules", "Rules"]];
+    var tabs = [["overview", "Overview"], ["leaderboard", "Sales Leaderboard"], ["appointments", "Appointments"], ["leads", "Leads"], ["rules", "Rules"]];
     root.appendChild(el("div", { class: "tabs", role: "tablist" }, tabs.map(function (t) {
       return el("button", { type: "button", class: "tab", role: "tab", "aria-selected": state.tab === t[0] ? "true" : "false", text: t[1], on: { click: function () {
         if (state.dirty && state.tab === "rules" && !window.confirm("You have unsaved rule changes. Leave without saving?")) return;
@@ -349,6 +360,12 @@
     if (state.busy && !state.report) { box.appendChild(el("p", { class: "muted", text: "Loading…" })); return; }
     if (state.tab === "overview") renderOverview(box);
     else if (state.tab === "leads") renderLeads(box);
+    else if (state.tab === "leaderboard" || state.tab === "appointments") {
+      // Sales views live in admin-sales.js (same page, same data); they get the helpers they need and nothing else.
+      var sales = window.RFAdminSales;
+      if (!sales) box.appendChild(el("p", { class: "muted", text: "The sales views did not load. Refresh the page." }));
+      else sales[state.tab === "leaderboard" ? "renderLeaderboard" : "renderAppointments"](box, state.sales, { el: el, pill: pill, num: num, pct: pct, money: money, state: state, rerender: render });
+    }
     else renderRules(box);
   }
 
