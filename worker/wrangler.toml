@@ -48,8 +48,10 @@ CORTANA_WEBHOOKS = """{
 # 1. Outcome sync (GHL pipeline, setter call log, closer appointments, Fathom / Google Meet attendance) on the half hour.
 # 2. Cortana stage milestones every ten minutes in between (never the same minute: each run has its own subrequest
 #    budget). The second expression is matched verbatim in index.ts (CORTANA_CRON) — change both together.
+# 3. Abandoned survey starts → GHL (abandoned.ts), every ten minutes on its own minute; matched verbatim as
+#    ABANDONED_CRON — change both together.
 [triggers]
-crons = ["*/30 * * * *", "5-55/10 * * * *"]
+crons = ["*/30 * * * *", "5-55/10 * * * *", "2-52/10 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

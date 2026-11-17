@@ -174,6 +174,8 @@ export type ContactCredit = {
 export type SurveyContact = {
   name?: string | null; email?: string | null; phone?: string | null; city?: string | null; timezone?: string | null;
   timeline?: string | null; business_owner?: string | null; capital?: string | null; qualified?: boolean | null;
+  /** Extra tags beside the standard ones (e.g. `abandoned-survey` for a start that never reached the capital question). */
+  tags?: string[];
 };
 
 /** Create or update the contact (GHL matches on email or phone) with the survey answers as custom fields. */
@@ -185,7 +187,7 @@ export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact)
   const put = (key: string, value: string | null | undefined) => { if (ids[key] && value) customFields.push({ id: ids[key], field_value: value }); };
   put("timeline", c.timeline); put("business_owner", c.business_owner); put("capital", c.capital); put("city", c.city);
   if (c.qualified != null) put("qualified", c.qualified ? "Yes" : "No");
-  const tags = ["funnel-application", ...(c.qualified == null ? [] : [c.qualified ? "qualified" : "not-qualified"]), ...(c.phone ? [] : ["email-only"])];
+  const tags = ["funnel-application", ...(c.qualified == null ? [] : [c.qualified ? "qualified" : "not-qualified"]), ...(c.phone ? [] : ["email-only"]), ...(c.tags ?? [])];
   const body: Record<string, unknown> = {
     locationId: cfg.locationId,
     ...(parts[0] ? { firstName: parts[0] } : {}),
