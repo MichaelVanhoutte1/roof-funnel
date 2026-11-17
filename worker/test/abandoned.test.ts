@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { ABANDONED_TAG, MAX_ATTEMPTS, syncAbandoned } from "../src/abandoned.ts";
+import { ABANDONED_TAG, clearAbandonedTag, MAX_ATTEMPTS, syncAbandoned } from "../src/abandoned.ts";
 import { upsertSurveyContact } from "../src/ghl.ts";
 
 const plain = (o: unknown) => ({ ...(o as Record<string, unknown>) });
@@ -84,6 +84,45 @@ test("a failed upsert is recorded, retried after six hours, and given up after M
   db.prepare("UPDATE leads SET ghl_abandoned_attempts = ?").run(MAX_ATTEMPTS);
   age(7);
   assert.deepEqual(await syncAbandoned(env(d1), failing as never), { candidates: 0, synced: 0, failed: 0 });
+});
+
+test("a visitor who finishes while the pass is working through the batch is not pushed as abandoned", async () => {
+  const { db, d1 } = realDb();
+  insert(db, { id: 1 });
+  insert(db, { id: 2 });
+  const calls: number[] = [];
+  // While lead 1 is on its way to GHL, lead 2 completes the survey: the full submit rewrites the same row.
+  const upsert = async (_cfg: unknown, c: Record<string, unknown>) => {
+    calls.push(Number(String(c.phone).slice(-4)));
+    db.prepare("UPDATE leads SET status = 'full', capital = 'Yes, I will use financing.' WHERE id = 2").run();
+    return "ghl-1";
+  };
+  assert.deepEqual(await syncAbandoned(env(d1), upsert as never), { candidates: 2, synced: 1, failed: 0 });
+  assert.deepEqual(calls, [1]);
+  assert.deepEqual(plain(db.prepare("SELECT ghl_contact_id, ghl_abandoned_at, ghl_abandoned_attempts FROM leads WHERE id = 2").get()),
+    { ghl_contact_id: null, ghl_abandoned_at: null, ghl_abandoned_attempts: 0 });
+});
+
+test("clearAbandonedTag removes the tag only from contacts this module pushed, and never throws", async () => {
+  const { db, d1 } = realDb();
+  insert(db, { id: 1, ghl_contact_id: "c-pushed" });
+  db.prepare("UPDATE leads SET ghl_abandoned_at = '2026-11-17T00:00:00.000Z' WHERE id = 1").run();
+  insert(db, { id: 2, ghl_contact_id: "c-qualified" });   // synced by the qualified path, never tagged
+  insert(db, { id: 3 });                                    // not in GHL at all
+  const removed: Array<[string, string[]]> = [];
+  const remove = async (_cfg: unknown, id: string, tags: string[]) => { removed.push([id, tags]); };
+  assert.equal(await clearAbandonedTag(env(d1), 1, remove as never), true);
+  assert.equal(await clearAbandonedTag(env(d1), 2, remove as never), false);
+  assert.equal(await clearAbandonedTag(env(d1), 3, remove as never), false);
+  assert.equal(await clearAbandonedTag(env(d1), 99, remove as never), false);
+  assert.deepEqual(removed, [["c-pushed", [ABANDONED_TAG]]]);
+  assert.equal(await clearAbandonedTag(env(d1), 1, (async () => { throw new Error("GHL 500"); }) as never), false);
+  assert.equal(await clearAbandonedTag({ DB: d1 }, 1, remove as never), false);
+  // migration 0013 not applied yet: the missing column is swallowed, the capture path is unaffected
+  const bare = new DatabaseSync(":memory:");
+  bare.exec("CREATE TABLE leads (id INTEGER PRIMARY KEY, ghl_contact_id TEXT)");
+  const bareD1 = { prepare: (sql: string) => ({ bind: (...a: Array<string | number | null>) => ({ async first() { return bare.prepare(sql).get(...a) ?? null; } }) }) } as unknown as D1Database;
+  assert.equal(await clearAbandonedTag(env(bareD1), 1, remove as never), false);
 });
 
 test("batch limit and the off switch", async () => {

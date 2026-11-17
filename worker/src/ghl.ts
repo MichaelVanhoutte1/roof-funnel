@@ -206,6 +206,11 @@ export async function upsertSurveyContact(cfg: ContactsConfig, c: SurveyContact)
   return id;
 }
 
+/** Take tags off an existing contact (GHL "Remove Tags"); the contact's other tags and fields stay untouched. */
+export async function removeContactTags(cfg: ContactsConfig, contactId: string, tags: string[]): Promise<void> {
+  await ghl(cfg as GhlConfig, `/contacts/${encodeURIComponent(contactId)}/tags`, { method: "DELETE", headers: { Version: "2021-07-28" }, body: JSON.stringify({ tags }) });
+}
+
 /**
  * Write the soft credit check figures onto an existing contact. Only the credit custom fields are sent
  * (PUT by id), so tags, name and everything a workflow changed since the first sync stay untouched.

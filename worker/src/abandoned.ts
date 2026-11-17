@@ -10,13 +10,16 @@
  * Runs as its own cron (ABANDONED_CRON) so it never shares a subrequest budget with the outcome sync or the Cortana
  * pass. Per lead: one claim write, one GHL upsert, one result write (+ the one-off custom-field lookup).
  */
-import { upsertSurveyContact, type ContactsConfig } from "./ghl.ts";
+import { removeContactTags, upsertSurveyContact, type ContactsConfig } from "./ghl.ts";
 
 /** The third cron in wrangler.toml, verbatim. */
 export const ABANDONED_CRON = "2-52/10 * * * *";
 export const ABANDONED_TAG = "abandoned-survey";
-/** Leads per pass: 15 × (1 fetch + 2 D1) + 2 selects + ≤ 2 field lookups ≈ 49 of the 50 subrequests. */
-export const ABANDONED_BATCH = 15;
+/**
+ * Leads per pass. Subrequests: 1 select + 14 × (claim, upsert, result) + 1 custom-field list = 44 of 50; if the five
+ * survey fields were deleted in GHL the lookup re-creates them (+5) and the pass still fits (49).
+ */
+export const ABANDONED_BATCH = 14;
 /** A visitor may still finish the survey; after this long a start with no capital answer counts as abandoned. */
 export const SETTLE = "-30 minutes";
 /** A failed or stranded claim is retried after this long. */
@@ -58,15 +61,17 @@ export async function syncAbandoned(env: AbandonedEnv, upsert: Upsert = upsertSu
   for (const row of results) {
     const claim = await env.DB.prepare(
       `UPDATE leads SET ghl_abandoned_at = ${SQL_NOW}, ghl_abandoned_attempts = ghl_abandoned_attempts + 1
-       WHERE id = ?1 AND ghl_contact_id IS NULL AND (ghl_abandoned_at IS NULL OR ghl_abandoned_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','${RETRY}'))`,
+       WHERE id = ?1 AND status = 'partial' AND capital IS NULL AND ghl_contact_id IS NULL
+         AND (ghl_abandoned_at IS NULL OR ghl_abandoned_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','${RETRY}'))`,
     ).bind(row.id).run();
-    if ((claim.meta.changes ?? 0) === 0) continue; // another pass has it
+    // No longer abandoned (the visitor finished while this pass was working through the batch), or another pass has it.
+    if ((claim.meta.changes ?? 0) === 0) continue;
     try {
       const id = await upsert(cfg, {
         name: row.name, email: row.email, phone: row.phone, city: row.city,
         timeline: row.timeline, business_owner: row.business_owner, capital: null, qualified: null, tags: [ABANDONED_TAG],
       });
-      await env.DB.prepare("UPDATE leads SET ghl_contact_id = ?1, ghl_error = NULL WHERE id = ?2").bind(id, row.id).run();
+      await env.DB.prepare("UPDATE leads SET ghl_contact_id = ?1 WHERE id = ?2").bind(id, row.id).run();
       summary.synced++;
       console.log("[abandoned] lead", row.id, "→ GHL contact", id);
     } catch (err) {
@@ -78,4 +83,25 @@ export async function syncAbandoned(env: AbandonedEnv, upsert: Upsert = upsertSu
   }
   console.log("[abandoned]", JSON.stringify(summary));
   return summary;
+}
+
+/**
+ * The lead came back and finished the survey (or its answers now qualify): it is no longer an abandoned start, so the
+ * tag comes off the GHL contact and a setter working that tag does not dial someone who just booked or was turned
+ * away. Only rows this module pushed carry ghl_abandoned_at. Never rejects — the lead capture must not depend on it
+ * (nor on migration 0013 being applied: a missing column lands in the catch).
+ */
+export async function clearAbandonedTag(env: AbandonedEnv, leadId: number, remove: typeof removeContactTags = removeContactTags): Promise<boolean> {
+  try {
+    if (!env.GHL_PIT || !env.GHL_LOCATION_ID) return false;
+    const row = await env.DB.prepare("SELECT ghl_contact_id, ghl_abandoned_at FROM leads WHERE id = ?1").bind(leadId)
+      .first<{ ghl_contact_id: string | null; ghl_abandoned_at: string | null }>();
+    if (!row?.ghl_contact_id || !row.ghl_abandoned_at) return false;
+    await remove({ token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID }, row.ghl_contact_id, [ABANDONED_TAG]);
+    console.log("[abandoned] lead", leadId, "finished the survey — tag removed");
+    return true;
+  } catch (err) {
+    console.error("[abandoned] lead", leadId, "tag removal failed:", String(err).slice(0, 200));
+    return false;
+  }
 }
