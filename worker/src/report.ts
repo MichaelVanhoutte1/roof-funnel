@@ -49,6 +49,8 @@ export type ReportLead = {
   won_manual?: number | null;
   cash_manual?: number | null;
   close_date_manual?: string | null;
+  /** When the lead booked a call through the funnel itself (POST /book); null for setter-booked or older rows. */
+  booked_at?: string | null;
 };
 
 type StageFacts = { talked: boolean; setterNoShow: boolean; setterDq: boolean; toCloser: boolean; closerBooked: boolean; closerShowed: boolean; closerNoShow: boolean; won: boolean };
@@ -78,7 +80,10 @@ export function stagesWith(fact: keyof StageFacts): string[] {
 }
 
 export type Outcome = {
+  /** A setter call is booked. */
   booked: boolean;
+  /** The lead booked its closer call itself on the funnel (closer calendar), with no setter call. */
+  selfBooked: boolean;
   setterShowed: boolean;
   setterNoShow: boolean;
   setterDq: boolean;
@@ -110,6 +115,7 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const manualSetter = l.setter_attended_manual ?? null, manualCloser = l.closer_attended_manual ?? null;
   const won = l.won_manual === 1 ? true : l.won_manual === 0 ? false : stage.won || l.opportunity_status === "won";
   const booked = !!l.appointment_id;
+  const selfBooked = !booked && !!l.booked_at && !!l.closer_appointment_id;
   // A call counts as missed half an hour after its start, so a call in progress is not a no-show.
   const past = !!l.appointment_start && Date.parse(l.appointment_start) + NO_SHOW_GRACE_MS <= Date.parse(nowIso);
   const longCall = (l.setter_call_seconds ?? 0) >= SHOW_MIN_CALL_SECONDS;
@@ -118,7 +124,8 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const talked = manualSetter === "showed" || (manualSetter !== "no_show" && (longCall || stage.talked || won || ghlSetter === "showed"));
   // A past booked call with no conversation is a no-show once the setter marked it or tried calling.
   const setterNoShow = manualSetter === "no_show" ? booked : booked && past && !talked && (stage.setterNoShow || ghlSetter === "noshow" || (l.setter_calls ?? 0) > 0);
-  const toCloser = stage.toCloser || won || !!l.closer_appointment_id;
+  // A self-booked closer call skipped the setter: nothing the card says makes it a setter pass or turn-away.
+  const toCloser = !selfBooked && (stage.toCloser || won || !!l.closer_appointment_id);
   const closerBooked = stage.closerBooked || won || !!l.closer_appointment_id;
   const ghlCloser = (l.closer_status ?? "").toLowerCase();
   // Any positive witness wins: a Meet/Fathom record of the prospect, a card moved to Followup/Won, or a hand-set
@@ -137,9 +144,10 @@ export function leadOutcome(l: ReportLead, nowIso: string): Outcome {
   const closerUpcoming = closerOpen && !closerCancelled && !!l.closer_start && !closerPast;
   return {
     booked,
+    selfBooked,
     setterShowed,
     setterNoShow,
-    setterDq: stage.setterDq,
+    setterDq: !selfBooked && stage.setterDq,
     toCloser,
     closerBooked,
     closerShowed,
@@ -160,7 +168,10 @@ export type SegmentRow = {
   leads: number;
   /** Completed the survey and was sent to the calendar. */
   qualified: number;
+  /** Setter calls booked. */
   booked: number;
+  /** Closer calls the lead booked itself on the funnel (no setter call). */
+  selfBooked: number;
   /** booked ÷ leads */
   bookRate: number | null;
   /** Booked and had the setter conversation. */
@@ -175,7 +186,7 @@ export type SegmentRow = {
   setterDq: number;
   toCloser: number;
   closerBooked: number;
-  /** closerBooked ÷ showed (setter showed) */
+  /** closerBooked ÷ (setter showed + self-booked closer calls) */
   closerBookRate: number | null;
   closerShowed: number;
   closerNoShow: number;
@@ -189,7 +200,7 @@ export type SegmentRow = {
   /** won ÷ closerShowed */
   closeRate: number | null;
   cash: number;
-  /** cash ÷ booked */
+  /** cash ÷ (booked + selfBooked): per call booked, setter or self-booked closer */
   cashPerBooked: number | null;
 };
 
@@ -197,7 +208,7 @@ type Counts = Omit<SegmentRow, "bookRate" | "showRate" | "closerBookRate" | "clo
 
 function emptyCounts(label: string): Counts {
   return {
-    label, leads: 0, qualified: 0, booked: 0, showed: 0, noShow: 0, upcoming: 0, cancelled: 0, pending: 0, setterDq: 0, toCloser: 0,
+    label, leads: 0, qualified: 0, booked: 0, selfBooked: 0, showed: 0, noShow: 0, upcoming: 0, cancelled: 0, pending: 0, setterDq: 0, toCloser: 0,
     closerBooked: 0, closerShowed: 0, closerNoShow: 0, closerUpcoming: 0, closerCancelled: 0, closerPending: 0, won: 0, cash: 0,
   };
 }
@@ -211,10 +222,10 @@ function finish(c: Counts): SegmentRow {
     ...c,
     bookRate: rate(c.booked, c.leads),
     showRate: rate(c.showed, c.showed + c.noShow),
-    closerBookRate: rate(c.closerBooked, c.showed),
+    closerBookRate: rate(c.closerBooked, c.showed + c.selfBooked),
     closerShowRate: rate(c.closerShowed, c.closerShowed + c.closerNoShow),
     closeRate: rate(c.won, c.closerShowed),
-    cashPerBooked: c.booked > 0 ? c.cash / c.booked : null,
+    cashPerBooked: c.booked + c.selfBooked > 0 ? c.cash / (c.booked + c.selfBooked) : null,
   };
 }
 
@@ -222,6 +233,7 @@ function add(c: Counts, l: ReportLead, o: Outcome): void {
   c.leads++;
   if (l.status === "full" && l.route === "calendar") c.qualified++;
   if (o.booked) c.booked++;
+  if (o.selfBooked) c.selfBooked++;
   if (o.setterShowed) c.showed++;
   if (o.setterNoShow) c.noShow++;
   if (o.setterUpcoming) c.upcoming++;

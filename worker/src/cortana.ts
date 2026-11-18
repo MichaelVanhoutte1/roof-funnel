@@ -109,12 +109,16 @@ function stageList(fact: Parameters<typeof stagesWith>[0]): string {
  *  setter_qualified    the setter passed it on (Setter Qualified or any later stage, or a closer call on the calendar);
  *  setter_disqualified the setter turned it away;
  *  closer_booked       a closer call is booked (calendar or Closer Booked onwards).
+ * A lead that booked its closer call itself on the funnel (closer calendar) never had a setter call: of these four it
+ * only ever reaches closer_booked, whatever the pipeline card says.
  */
+export const SELF_BOOKED_CLOSER = "(booked_at IS NOT NULL AND appointment_id IS NULL AND closer_appointment_id IS NOT NULL)";
+
 export function milestoneWhere(event: MilestoneEvent): string {
   switch (event) {
-    case "setter_self_booked": return "booked_at IS NOT NULL";
-    case "setter_qualified": return `(LOWER(TRIM(pipeline_stage)) IN (${stageList("toCloser")}) OR closer_appointment_id IS NOT NULL)`;
-    case "setter_disqualified": return `LOWER(TRIM(pipeline_stage)) IN (${stageList("setterDq")})`;
+    case "setter_self_booked": return "(booked_at IS NOT NULL AND appointment_id IS NOT NULL)";
+    case "setter_qualified": return `(LOWER(TRIM(pipeline_stage)) IN (${stageList("toCloser")}) OR closer_appointment_id IS NOT NULL) AND NOT ${SELF_BOOKED_CLOSER}`;
+    case "setter_disqualified": return `LOWER(TRIM(pipeline_stage)) IN (${stageList("setterDq")}) AND NOT ${SELF_BOOKED_CLOSER}`;
     case "closer_booked": return `(LOWER(TRIM(pipeline_stage)) IN (${stageList("closerBooked")}) OR closer_appointment_id IS NOT NULL)`;
   }
 }

@@ -36,7 +36,7 @@ import { lookupPhone, phoneLookupConfig, type LineType, type PhoneLookup } from 
 import { handleAdmin, loadRules } from "./admin.ts";
 import { runOutcomeSync } from "./outcomes.ts";
 import { eventPayload, MILESTONE_COLUMNS, milestonePayload, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap, type MilestoneRow, type Tracking } from "./cortana.ts";
-import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
+import { booksCloser, createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
@@ -55,7 +55,10 @@ export interface Env {
   /** Native booking step (optional until set): PIT secret + sub-account + calendar. */
   GHL_PIT?: string;
   GHL_LOCATION_ID?: string;
+  /** Setter Calendar (read by the outcome sync). */
   GHL_CALENDAR_ID?: string;
+  /** The calendar the funnel books; unset = GHL_CALENDAR_ID. Any other calendar is a closer calendar. */
+  GHL_BOOKING_CALENDAR_ID?: string;
   /** Shown as the appointment title and on the thank-you page. */
   APPOINTMENT_TITLE?: string;
   /** "off" disables the pre-booking contact sync (email capture + lead save → GHL contact). */
@@ -1048,8 +1051,9 @@ const MAX_RANGE_DAYS = 62;
 const IANA_RE = /^[A-Za-z_]+(?:\/[A-Za-z_+-]+){0,2}$/;
 
 function ghlConfig(env: Env): GhlConfig | null {
-  if (!env.GHL_PIT || !env.GHL_LOCATION_ID || !env.GHL_CALENDAR_ID) return null;
-  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID, calendarId: env.GHL_CALENDAR_ID };
+  const calendarId = env.GHL_BOOKING_CALENDAR_ID || env.GHL_CALENDAR_ID;
+  if (!env.GHL_PIT || !env.GHL_LOCATION_ID || !calendarId) return null;
+  return { token: env.GHL_PIT, locationId: env.GHL_LOCATION_ID, calendarId };
 }
 
 function validTz(tz: string | null): string | null {
@@ -1143,18 +1147,26 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
     const appointmentId = await createAppointment(cfg, {
       contactId, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString(), title,
     });
+    const closer = booksCloser(env.GHL_CALENDAR_ID, env.GHL_BOOKING_CALENDAR_ID);
+    // A closer-calendar booking is the lead's closer call: it goes in the closer columns (the outcome sync then fills
+    // the Meet code and host from GHL), and the setter columns stay empty because there is no setter call.
     await env.DB.prepare(
-      `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_end = ?3, appointment_tz = ?4, ghl_contact_id = ?5,
-         booked_at = ${SQL_NOW}, updated_at = ${SQL_NOW} WHERE id = ?6`,
+      closer
+        ? `UPDATE leads SET closer_appointment_id = ?1, closer_start = ?2, closer_status = 'confirmed', appointment_tz = ?4, ghl_contact_id = ?5,
+             closer_attended = NULL, closer_attended_source = NULL, closer_minutes = NULL, closer_checked_at = NULL,
+             booked_at = ${SQL_NOW}, updated_at = ${SQL_NOW} WHERE id = ?6`
+        : `UPDATE leads SET appointment_id = ?1, appointment_start = ?2, appointment_end = ?3, appointment_tz = ?4, ghl_contact_id = ?5,
+             booked_at = ${SQL_NOW}, updated_at = ${SQL_NOW} WHERE id = ?6`,
     ).bind(appointmentId, new Date(startMs).toISOString(), new Date(endMs).toISOString(), tz, contactId, lead.id).run();
-    console.log("[book] appointment", appointmentId, "lead", lead.id, maskName(lead.name), maskPhone(phone), start, tz);
-    // Cortana's "Setter Self-booked" step, straight away (the cron pass would catch it later anyway).
-    if (webhookMap(env.CORTANA_WEBHOOKS).setter_self_booked) ctx.waitUntil((async () => {
+    console.log("[book] appointment", appointmentId, closer ? "(closer)" : "(setter)", "lead", lead.id, maskName(lead.name), maskPhone(phone), start, tz);
+    // Cortana's matching stage step, straight away (the cron pass would catch it later anyway).
+    const milestone = closer ? "closer_booked" : "setter_self_booked";
+    if (webhookMap(env.CORTANA_WEBHOOKS)[milestone]) ctx.waitUntil((async () => {
       try {
         const row = await env.DB.prepare(`SELECT ${MILESTONE_COLUMNS} FROM leads WHERE id = ?1`).bind(lead.id).first<MilestoneRow>();
-        if (row) await sendMilestoneOnce(env, row.id, "setter_self_booked", milestonePayload("setter_self_booked", row));
+        if (row) await sendMilestoneOnce(env, row.id, milestone, milestonePayload(milestone, row));
       } catch (err) {
-        console.error("[cortana] self-booked post failed for lead", lead.id, String(err).slice(0, 160));
+        console.error("[cortana]", milestone, "post failed for lead", lead.id, String(err).slice(0, 160));
       }
     })());
     return json({

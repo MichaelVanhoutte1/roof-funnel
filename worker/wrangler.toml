@@ -19,7 +19,11 @@ ALLOWED_COUNTRIES = "US"
 # Native booking step: set both ids here (or as secrets) once the calendar exists; until then the
 # widget falls back to the GHL booking widget URL in data-calendar, or the thanks panel.
 GHL_LOCATION_ID = "w3MPokDbxpSGUIzrT0By"
+# Setter Calendar: the outcome sync refreshes the setter calls from it (worker/src/outcomes.ts).
 GHL_CALENDAR_ID = "4ZXhsZUJmr9HmX2fB0Wo"
+# The calendar the funnel shows and books (GET /slots, POST /book). Closer Calendar since 2026-11-18 (Michael):
+# qualified leads book the closer's Google Meet call themselves and skip the setter. Unset = GHL_CALENDAR_ID.
+GHL_BOOKING_CALENDAR_ID = "znrH71Nko6eJKja6kmFp"
 APPOINTMENT_TITLE = "Dealer Strategy Session"
 # GHL contact sync: "qualified" = every qualified lead becomes a GHL contact as soon as its phone is stored
 # (answers in custom fields, tags funnel-application + qualified). "off" / "all" also supported.

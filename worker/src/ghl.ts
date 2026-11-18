@@ -10,6 +10,11 @@ export type GhlConfig = { token: string; locationId: string; calendarId: string 
 
 export type SlotsByDate = Record<string, string[]>;
 
+/** True when the funnel books a calendar other than the Setter Calendar: the booking is then the lead's closer call. */
+export function booksCloser(setterCalendarId: string | undefined, bookingCalendarId: string | undefined): boolean {
+  return !!bookingCalendarId && bookingCalendarId !== setterCalendarId;
+}
+
 /** One authenticated GHL call. Pass `headers: { Version }` for endpoints on a newer API version. */
 export async function ghl<T>(cfg: GhlConfig, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE + path, {

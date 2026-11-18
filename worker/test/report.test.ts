@@ -188,3 +188,22 @@ test("buildReport totals, rates and per-answer rows", () => {
   const empty = buildReport([], NOW).totals;
   assert.deepEqual([empty.leads, empty.bookRate, empty.showRate, empty.closeRate, empty.cashPerBooked], [0, null, null, null, null]);
 });
+
+test("a closer call booked on the funnel counts as self-booked, not as a setter call, and skips the setter steps", () => {
+  const self = lead({ booked_at: "2026-11-08T10:00:00.000Z", closer_appointment_id: "c9", closer_start: "2026-11-12T15:00:00.000Z", pipeline_stage: "Closer Booked" });
+  const o = leadOutcome(self, NOW);
+  assert.deepEqual(
+    { booked: o.booked, selfBooked: o.selfBooked, toCloser: o.toCloser, closerBooked: o.closerBooked, closerUpcoming: o.closerUpcoming, setterPending: o.setterPending, setterNoShow: o.setterNoShow },
+    { booked: false, selfBooked: true, toCloser: false, closerBooked: true, closerUpcoming: true, setterPending: false, setterNoShow: false },
+  );
+  assert.equal(leadOutcome(lead({ ...self, pipeline_stage: "Setter Disqualified" }), NOW).setterDq, false);
+  // a setter-booked lead that later got a closer call is not self-booked, even with booked_at set
+  assert.equal(leadOutcome(booked({ booked_at: "2026-11-01T10:00:00.000Z", closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z" }), NOW).selfBooked, false);
+
+  // one setter show that went to a closer + one self-booked closer call: both closer calls over both ways in = 100%
+  const viaSetter = booked({ setter_calls: 1, setter_call_seconds: 400, pipeline_stage: "Closer Booked", closer_appointment_id: "c1", closer_start: "2026-11-12T15:00:00.000Z" });
+  const t = buildReport([viaSetter, self], NOW).totals;
+  assert.deepEqual({ booked: t.booked, selfBooked: t.selfBooked, showed: t.showed, closerBooked: t.closerBooked, closerBookRate: t.closerBookRate }, { booked: 1, selfBooked: 1, showed: 1, closerBooked: 2, closerBookRate: 1 });
+  const won = buildReport([lead({ ...self, won_manual: 1, cash_manual: 5000 })], NOW).totals;
+  assert.equal(won.cashPerBooked, 5000);
+});
