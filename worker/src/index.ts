@@ -8,6 +8,7 @@
  *   GET  /leads         admin export (Authorization: Bearer ADMIN_TOKEN) ?since=ISO&limit=N
  *   /admin/*            report, leads, disqualification rules, outcome sync (admin.ts; same bearer token)
  *   cron (every 30 min) outcome sync from GHL / Fathom / Google Meet (outcomes.ts)
+ *   cron (every 10 min) abandoned survey starts (phone saved, capital never answered) → GHL, tagged abandoned-survey (abandoned.ts)
  *
  * Routing: a completed application goes to the calendar unless one of its answers is switched to
  * "disqualify" in the rules, or a credit rule is on and the soft credit check result breaks it.
@@ -35,6 +36,7 @@ import { answerDqReason, answersQualify, creditDqReason, creditRulesApply, publi
 import { lookupPhone, phoneLookupConfig, type LineType, type PhoneLookup } from "./phone-lookup.ts";
 import { handleAdmin, loadRules } from "./admin.ts";
 import { runOutcomeSync } from "./outcomes.ts";
+import { ABANDONED_CRON, clearAbandonedTag, syncAbandoned } from "./abandoned.ts";
 import { eventPayload, MILESTONE_COLUMNS, milestonePayload, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap, type MilestoneRow, type Tracking } from "./cortana.ts";
 import { createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
@@ -585,6 +587,9 @@ async function settleLead(env: Env, ctx: ExecutionContext, s: SettleInput): Prom
   const isQualified = partial ? answersQualify(rules, answers) && !turnedAwayBefore && dqReason === null : dqReason === null;
   const contactSynced = syncLeadContact(env, row, timezone, isQualified);
   ctx.waitUntil(contactSynced);
+  // An earlier abandoned-start push of this lead (abandoned.ts) is out of date once the survey is finished or its
+  // answers qualify: the tag comes off after the contact sync has written the current tags.
+  if (!partial || isQualified) ctx.waitUntil(contactSynced.then(() => clearAbandonedTag(env, row.id)));
   const leadFields = {
     lead_id: row.id, session_id: tracking?.session_id, city: row.city, timeline: row.timeline, business_owner: row.business_owner,
     capital: row.capital, name: row.name, email: row.email, phone: row.phone, survey_partial: partial,
@@ -1194,11 +1199,11 @@ export default {
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
     return json({ ok: false, error: "Not found" }, 404, corsHeaders(request, env));
   },
-  // Two crons (wrangler.toml), each its own invocation with its own subrequest budget: the outcome sync on the
-  // half hour, the Cortana stage-milestone pass on the other minutes.
+  // Three crons (wrangler.toml), each its own invocation with its own subrequest budget: the outcome sync on the
+  // half hour, the Cortana stage-milestone pass and the abandoned-start sync on their own minutes in between.
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const cortana = event.cron === CORTANA_CRON;
-    console.log("[cron]", JSON.stringify(event.cron), cortana ? "cortana milestones" : "outcome sync");
-    ctx.waitUntil(cortana ? relayMilestones(env) : runOutcomeSync(env));
+    const job = event.cron === CORTANA_CRON ? "cortana milestones" : event.cron === ABANDONED_CRON ? "abandoned starts" : "outcome sync";
+    console.log("[cron]", JSON.stringify(event.cron), job);
+    ctx.waitUntil(job === "cortana milestones" ? relayMilestones(env) : job === "abandoned starts" ? syncAbandoned(env) : runOutcomeSync(env));
   },
 } satisfies ExportedHandler<Env>;
