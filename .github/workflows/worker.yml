@@ -66,5 +66,5 @@ jobs:
         run: |
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
           doppler secrets download --no-file --format json \
-            | python3 -c 'import sys,json,tomllib; v=tomllib.load(open("wrangler.toml","rb")).get("vars",{}); d=json.load(sys.stdin); print(json.dumps({k:x for k,x in d.items() if not k.startswith("DOPPLER_") and k not in v}))' \
+            | python3 -c 'import sys,json,re; m=re.search(r"^\[vars\]$(.*?)(?=^\[|\Z)", open("wrangler.toml").read(), re.M|re.S); v=set(re.findall(r"^([A-Za-z0-9_]+)\s*=", m.group(1) if m else "", re.M)); d=json.load(sys.stdin); print(json.dumps({k:x for k,x in d.items() if not k.startswith("DOPPLER_") and k not in v}))' \
             | npx wrangler secret bulk
