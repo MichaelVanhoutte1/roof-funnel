@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 const plain = (o: unknown) => ({ ...(o as Record<string, unknown>) });
 import {
-  eventPayload, MAX_ATTEMPTS, MILESTONE_EVENTS, milestoneAt, milestonePayload, milestoneWhere, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap,
+  eventPayload, MAX_ATTEMPTS, MILESTONE_EVENTS, milestoneAt, milestonePayload, milestoneWhere, relayEvent, relayMilestones, SELF_BOOKED_CLOSER, sendMilestoneOnce, webhookMap,
   type MilestoneRow,
 } from "../src/cortana.ts";
 
@@ -37,12 +37,13 @@ test("webhookMap keeps https URLs only; eventPayload puts the lead at the top le
 });
 
 test("milestoneWhere follows the report's stage table; milestoneAt reads the time off the row", () => {
-  assert.equal(milestoneWhere("setter_self_booked"), "booked_at IS NOT NULL");
+  assert.equal(milestoneWhere("setter_self_booked"), "(booked_at IS NOT NULL AND appointment_id IS NOT NULL)");
   const sq = milestoneWhere("setter_qualified");
   for (const s of ["'setter qualified'", "'closer booked'", "'closer followup'", "'closer booked noshow'", "'won'"]) assert.ok(sq.includes(s), s);
   assert.ok(!sq.includes("'setter disqualified'") && !sq.includes("'setter booked'"));
   assert.ok(sq.includes("closer_appointment_id IS NOT NULL"));
-  assert.equal(milestoneWhere("setter_disqualified"), "LOWER(TRIM(pipeline_stage)) IN ('setter disqualified')");
+  assert.equal(milestoneWhere("setter_disqualified"), `LOWER(TRIM(pipeline_stage)) IN ('setter disqualified') AND NOT ${SELF_BOOKED_CLOSER}`);
+  assert.ok(sq.endsWith(`AND NOT ${SELF_BOOKED_CLOSER}`));
   const cb = milestoneWhere("closer_booked");
   assert.ok(cb.includes("'closer booked'") && cb.includes("'won'") && !cb.includes("'setter qualified'"));
 
@@ -99,7 +100,7 @@ function realDb(): { db: DatabaseSync; d1: D1Database } {
   db.exec(`CREATE TABLE leads (
     id INTEGER PRIMARY KEY, updated_at TEXT NOT NULL DEFAULT '2026-11-01T00:00:00.000Z', name TEXT, email TEXT, phone TEXT NOT NULL, city TEXT,
     timeline TEXT, business_owner TEXT, capital TEXT, tracking TEXT, country TEXT, pipeline_stage TEXT, pipeline_stage_at TEXT,
-    appointment_tz TEXT, appointment_start TEXT, closer_appointment_id TEXT, closer_start TEXT)`);
+    appointment_tz TEXT, appointment_id TEXT, appointment_start TEXT, closer_appointment_id TEXT, closer_start TEXT)`);
   db.exec(readFileSync(new URL("../migrations/0012_cortana_stage_events.sql", import.meta.url), "utf8"));
   const d1 = {
     prepare(sql: string) {
@@ -118,12 +119,14 @@ function realDb(): { db: DatabaseSync; d1: D1Database } {
   return { db, d1 };
 }
 
-function insertLead(db: DatabaseSync, l: Partial<MilestoneRow> & { id: number; appointment_tz?: string | null; closer_appointment_id?: string | null }): void {
+/** A row with booked_at booked a setter call (appointment_id) unless the test says otherwise (appointment_id: null). */
+function insertLead(db: DatabaseSync, l: Partial<MilestoneRow> & { id: number; appointment_tz?: string | null; appointment_id?: string | null; closer_appointment_id?: string | null }): void {
   const r = row(l);
+  const appointmentId = l.appointment_id !== undefined ? l.appointment_id : r.booked_at ? `a${l.id}` : null;
   db.prepare(`INSERT INTO leads (id, name, email, phone, city, timeline, business_owner, capital, tracking, country, pipeline_stage, pipeline_stage_at,
-    appointment_tz, appointment_start, closer_appointment_id, closer_start, booked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    appointment_tz, appointment_id, appointment_start, closer_appointment_id, closer_start, booked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(r.id, r.name, r.email, r.phone, r.city, r.timeline, r.business_owner, r.capital, r.tracking, r.country, r.pipeline_stage, r.pipeline_stage_at,
-      l.appointment_tz ?? null, r.appointment_start, l.closer_appointment_id ?? null, r.closer_start, r.booked_at);
+      l.appointment_tz ?? null, appointmentId, r.appointment_start, l.closer_appointment_id ?? null, r.closer_start, r.booked_at);
 }
 
 test("migration 0012 backfills booked_at for the funnel's own bookings only", () => {
@@ -217,4 +220,20 @@ test("a failed post keeps its claim: retried an hour later, at most MAX_ATTEMPTS
   assert.equal(await sendMilestoneOnce(env, 6, "setter_disqualified", {}, up), "skipped");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM cortana_sent WHERE event = 'setter_disqualified'").get()!.n, 0);
   assert.equal(MILESTONE_EVENTS.length, 4);
+});
+
+test("a closer call the lead booked itself on the funnel reaches closer_booked only, whatever the card says", async () => {
+  const calls: string[] = [];
+  const fetchOk = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const b = JSON.parse(String(init?.body));
+    calls.push(`${b.event}:${b.lead_id}`);
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const { db, d1 } = realDb();
+  // a GHL workflow may move the card to Closer Booked, or a closer may mark it Setter Disqualified
+  insertLead(db, { id: 1, booked_at: "2026-11-18T10:00:00Z", appointment_id: null, closer_appointment_id: "c1", closer_start: "2026-11-19T15:00:00Z", pipeline_stage: "Closer Booked" });
+  insertLead(db, { id: 2, booked_at: "2026-11-18T11:00:00Z", appointment_id: null, closer_appointment_id: "c2", closer_start: "2026-11-19T16:00:00Z", pipeline_stage: "Setter Disqualified" });
+  const env = { DB: d1, CORTANA_WEBHOOKS: JSON.stringify({ ...JSON.parse(HOOKS), setter_disqualified: "https://use.example.com/hook/sd" }) };
+  await relayMilestones(env, 14, fetchOk);
+  assert.deepEqual(calls.sort(), ["closer_booked:1", "closer_booked:2"]);
 });

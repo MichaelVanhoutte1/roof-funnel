@@ -227,7 +227,7 @@
       stat("Total Leads", num(t.leads), num(t.qualified) + " sent to the calendar"),
       stat("Setter Booked", num(t.booked), pct(t.bookRate) + " of leads"),
       stat("Setter Show Rate", pct(t.showRate), num(t.showed) + " showed · " + num(t.noShow) + " no-show", openCalls(t.pending, t.cancelled, t.upcoming)),
-      stat("Closer Booked", num(t.closerBooked), pct(t.closerBookRate) + " of setter shows"),
+      stat("Closer Booked", num(t.closerBooked), pct(t.closerBookRate) + (t.selfBooked ? " of setter shows + self-booked · " + num(t.selfBooked) + " booked themselves" : " of setter shows")),
       stat("Closer Show Rate", pct(t.closerShowRate), num(t.closerShowed) + " showed · " + num(t.closerNoShow) + " no-show", openCalls(t.closerPending, t.closerCancelled, t.closerUpcoming)),
       stat("Close Rate", pct(t.closeRate), num(t.won) + " won of " + num(t.closerShowed) + " closer shows"),
       stat("$ / Booked Call", money(t.cashPerBooked), money(t.cash) + " cash"),

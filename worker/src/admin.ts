@@ -66,7 +66,7 @@ function isoParam(v: string | null, fallback: string): string {
 const REPORT_COLUMNS = `status, route, dq_reason, timeline, business_owner, capital, tracking, appointment_id, appointment_start, appointment_status,
   pipeline_stage, opportunity_status, opportunity_value, setter_calls, setter_call_seconds, closer_appointment_id, closer_start,
   closer_status, closer_attended, credit_status, credit_score, credit_offer_amount_1, credit_offer_amount_2,
-  setter_attended_manual, closer_attended_manual, won_manual, cash_manual, close_date_manual`;
+  setter_attended_manual, closer_attended_manual, won_manual, cash_manual, close_date_manual, booked_at`;
 
 const ATTENDED = new Set(["showed", "no_show", "auto"]);
 
