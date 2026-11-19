@@ -13,6 +13,7 @@ builder applied, so the rendered result is the same pixel for pixel.
 | `/thankyou-page/` | Thankyou Page | post-booking page, 15 proof screenshots |
 | `/thankyou/` | Thankyou (clone, 2026-10-11) | same page without the first two proof screenshots |
 | `/privacy-policy/` | Privacy Policy | |
+| `/terms/` | none (new page, 2026-11-19) | Terms of Service, incl. the SMS program terms (`/terms/#sms`) |
 
 ## Application survey (custom form)
 
