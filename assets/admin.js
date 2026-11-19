@@ -150,7 +150,7 @@
   }
 
   /* ---------------- overview (same layout as the CSP Lead Scoring page) ---------------- */
-  var SECTIONS = { capital: "Capital", timeline: "Urgency", business_owner: "Avatar", credit_score: "Credit", credit_offer: "Financing", result: "Funnel" };
+  var SECTIONS = { vsl_hook: "VSL test", vsl_cut: "VSL test", capital: "Capital", timeline: "Urgency", business_owner: "Avatar", credit_score: "Credit", credit_offer: "Financing", result: "Funnel" };
 
   /* Score weights the setter show, closer show, close and book rates (close % = won ÷ closer showed, from the server). */
   function scoreBadge(r) {
