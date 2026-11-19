@@ -99,6 +99,10 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
 .vsl-section{padding:0}
 .vsl-wrap{position:relative;width:100%;background:#000;border-radius:16px;border:1px solid var(--border);overflow:hidden;box-shadow:0 14px 44px rgba(11,37,56,.14);cursor:pointer;transition:box-shadow .3s}
 .vsl-wrap:hover{box-shadow:0 16px 48px rgba(11,37,56,.18)}
+/* VSL hook test: the vertical (phone) cut always fits between the top of the screen and the sticky CTA bar
+   (~96px tall on phones) — it narrows instead of being cut off. */
+.vsl-wrap.is-vertical{max-width:calc((100vh - 120px) * 9 / 16);margin:0 auto}
+@supports (height:100svh){.vsl-wrap.is-vertical{max-width:calc((100svh - 120px) * 9 / 16)}}
 
 /* CTA Section */
 .cta-section{padding:40px 0 20px;text-align:center}
@@ -228,13 +232,56 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
 </div>
 </section>
 
-<!-- ===== VIDEO SECTION — CORTANA VIDEO EMBED ===== -->
+<!-- ===== VIDEO SECTION — VIDALYTICS VSL HOOK TEST (2026-11-19) =====
+     Each visitor is randomly given one option and keeps it on later visits (localStorage "vsl_test_v1").
+     Phones (< 768px wide) get the vertical cut, everything else the horizontal one; the control only has a
+     horizontal cut. The pick is sent with the survey (tracking.vsl_hook / vsl_cut) and reported on /admin/.
+     Preview one option without changing your own assignment: ?vsl=hook2 (or control) and optionally &cut=vertical. -->
 <section class="vsl-section">
 <div class="container">
-  <div class="vsl-wrap">
-    <div id="ckv_embed_03fa2c72-b560-4e7f-ace8-3a1a9ed960b0" style="width:100%;position:relative;padding-top:56.25%;"></div>
-    <script async src="https://app.usecortana.ai/api/video/embed/03fa2c72-b560-4e7f-ace8-3a1a9ed960b0"></script>
-  </div>
+  <div class="vsl-wrap" id="vsl-wrap"></div>
+  <script>
+  (function () {
+    var ARMS = {
+      control: { h: "ZvieI5oxpf7CeI9i" },
+      hook1: { h: "7onzlIo0E3caUFx4", v: "kZkM1EJfZuVy9yxu" },
+      hook2: { h: "08d0ucZ0GhAbbkAG", v: "0KsReWzSqEYecaeA" },
+      hook3: { h: "BVVinhzrAqnvaNqp", v: "xKa5ggCE1UXOXD_U" },
+      hook4: { h: "NzvAdsRYp9_itNql", v: "OLGjmjxD6hoIhNR1" }
+    };
+    var KEY = "vsl_test_v1", names = Object.keys(ARMS), hook = null, preview = false;
+    var q = new URLSearchParams(window.location.search);
+    if (ARMS[q.get("vsl")]) { hook = q.get("vsl"); preview = true; }
+    if (!hook) { try { hook = localStorage.getItem(KEY); } catch (e) {} }
+    if (!ARMS[hook]) {
+      hook = names[Math.floor(Math.random() * names.length)];
+      try { localStorage.setItem(KEY, hook); } catch (e) {}
+    }
+    var arm = ARMS[hook];
+    var wantVertical = preview && q.get("cut") ? q.get("cut") === "vertical" : window.innerWidth < 768;
+    var cut = wantVertical && arm.v ? "vertical" : "horizontal";
+    var embedId = cut === "vertical" ? arm.v : arm.h;
+    window.FUNNEL_VSL = { hook: hook, cut: cut, embed: embedId };
+
+    var wrap = document.getElementById("vsl-wrap");
+    if (cut === "vertical") wrap.className += " is-vertical";
+    var box = document.createElement("div");
+    box.id = "vidalytics_embed_" + embedId;
+    box.style.cssText = "width:100%;position:relative;padding-top:" + (cut === "vertical" ? "177.78%" : "56.25%") + ";";
+    wrap.appendChild(box);
+
+    /* Vidalytics' own embed loader, unchanged apart from the ids being passed in. */
+    (function (v, i, d, a, l, y, t, c, s) {
+      y='_'+d.toLowerCase();c=d+'L';if(!v[d]){v[d]={};}if(!v[c]){v[c]={};}if(!v[y]){v[y]={};}var vl='Loader',vli=v[y][vl],vsl=v[c][vl + 'Script'],vlf=v[c][vl + 'Loaded'],ve='Embed';
+      if (!vsl){vsl=function(u,cb){
+        if(t){cb();return;}s=i.createElement("script");s.type="text/javascript";s.async=1;s.src=u;
+        if(s.readyState){s.onreadystatechange=function(){if(s.readyState==="loaded"||s.readyState=="complete"){s.onreadystatechange=null;vlf=1;cb();}};}else{s.onload=function(){vlf=1;cb();};}
+        i.getElementsByTagName("head")[0].appendChild(s);
+      };}
+      vsl(l+'loader.min.js',function(){if(!vli){var vlc=v[c][vl];vli=new vlc();}vli.loadScript(l+'player.min.js',function(){var vec=v[d][ve];t=new vec();t.run(a);});});
+    })(window, document, 'Vidalytics', 'vidalytics_embed_' + embedId, 'https://fast.vidalytics.com/embeds/vkHWu9dA/' + embedId + '/');
+  })();
+  </script>
 </div>
 </section>
 
@@ -256,7 +303,7 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
          data-calendar = GHL booking-widget URL shown after a qualified submit (empty = thanks panel). -->
     <link rel="stylesheet" href="assets/survey.css?v=202611101530">
     <div id="dealer-survey" data-api="https://api.startroofrejuvenating.com" data-calendar=""></div>
-    <script src="assets/survey.js?v=202611101530" defer></script>
+    <script src="assets/survey.js?v=202611191800" defer></script>
   </div>
 </div>
 </section>

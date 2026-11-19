@@ -312,9 +312,31 @@ export function resultLabel(l: Pick<ReportLead, "status" | "route" | "dq_reason"
   return DQ_LABELS[l.dq_reason ?? ""] ?? "Disqualified";
 }
 
+/* VSL hook test (started 2026-11-19): the option the opt-in page showed, from tracking.vsl_hook / vsl_cut. */
+const VSL_HOOKS: Record<string, string> = { control: "Control (current VSL)", hook1: "Hook 1", hook2: "Hook 2", hook3: "Hook 3", hook4: "Hook 4" };
+const BEFORE_VSL_TEST = "(before the test)";
+const VSL_ORDER = Object.values(VSL_HOOKS);
+
+export function vslHookLabel(l: Pick<ReportLead, "tracking">): string {
+  const raw = trackingField(l, "vsl_hook");
+  return raw ? VSL_HOOKS[raw] ?? raw : BEFORE_VSL_TEST;
+}
+
+export function vslCutLabel(l: Pick<ReportLead, "tracking">): string {
+  const hook = vslHookLabel(l);
+  if (hook === BEFORE_VSL_TEST) return hook;
+  const cut = trackingField(l, "vsl_cut");
+  return `${hook} · ${cut === "vertical" ? "vertical (phone)" : "horizontal"}`;
+}
+
 type SegmentDef = { key: string; title: string; of: (l: ReportLead) => string; order?: readonly string[] };
 
 const SEGMENTS: SegmentDef[] = [
+  { key: "vsl_hook", title: "Which VSL hook they were shown", of: vslHookLabel, order: [...VSL_ORDER, BEFORE_VSL_TEST] },
+  {
+    key: "vsl_cut", title: "VSL hook by video cut", of: vslCutLabel,
+    order: [...VSL_ORDER.flatMap((h) => [`${h} · vertical (phone)`, `${h} · horizontal`]), BEFORE_VSL_TEST],
+  },
   { key: "capital", title: "$20,000 in accessible capital?", of: (l) => l.capital ?? NOT_ANSWERED },
   { key: "timeline", title: "How soon are you planning to become a dealer?", of: (l) => l.timeline ?? NOT_ANSWERED, order: ["Right away", "Within 30 days", "More than 30 days"] },
   { key: "business_owner", title: "Business owner, or looking to start one?", of: (l) => l.business_owner ?? NOT_ANSWERED },

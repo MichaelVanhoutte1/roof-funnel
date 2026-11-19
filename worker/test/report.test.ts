@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReport, leadOutcome, offerBand, resultLabel, scoreBand, sourceLabel, type ReportLead } from "../src/report.ts";
+import { buildReport, leadOutcome, offerBand, resultLabel, scoreBand, sourceLabel, vslCutLabel, vslHookLabel, type ReportLead } from "../src/report.ts";
 
 const NOW = "2026-11-10T00:00:00.000Z";
 const lead = (over: Partial<ReportLead> = {}): ReportLead => ({
@@ -184,7 +184,7 @@ test("buildReport totals, rates and per-answer rows", () => {
   assert.deepEqual(timeline.rows.map((x) => [x.label, x.leads, x.booked]), [["Right away", 3, 2], ["Within 30 days", 3, 2], ["(not answered)", 1, 0]]);
   const within = timeline.rows[1];
   assert.deepEqual([within.showed, within.noShow, within.showRate, within.closeRate, within.cashPerBooked], [1, 1, 0.5, null, 0]);
-  assert.deepEqual(r.segments.map((s) => s.key), ["capital", "timeline", "business_owner", "credit_score", "credit_offer", "result", "source", "device"]);
+  assert.deepEqual(r.segments.map((s) => s.key), ["vsl_hook", "vsl_cut", "capital", "timeline", "business_owner", "credit_score", "credit_offer", "result", "source", "device"]);
   const empty = buildReport([], NOW).totals;
   assert.deepEqual([empty.leads, empty.bookRate, empty.showRate, empty.closeRate, empty.cashPerBooked], [0, null, null, null, null]);
 });
@@ -206,4 +206,19 @@ test("a closer call booked on the funnel counts as self-booked, not as a setter 
   assert.deepEqual({ booked: t.booked, selfBooked: t.selfBooked, showed: t.showed, closerBooked: t.closerBooked, closerBookRate: t.closerBookRate }, { booked: 1, selfBooked: 1, showed: 1, closerBooked: 2, closerBookRate: 1 });
   const won = buildReport([lead({ ...self, won_manual: 1, cash_manual: 5000 })], NOW).totals;
   assert.equal(won.cashPerBooked, 5000);
+});
+
+test("VSL hook test: leads are grouped by the option shown, and by cut", () => {
+  const t = (o: Record<string, string>) => lead({ tracking: JSON.stringify(o) });
+  assert.equal(vslHookLabel(t({ vsl_hook: "hook2", vsl_cut: "vertical" })), "Hook 2");
+  assert.equal(vslHookLabel(t({ vsl_hook: "control", vsl_cut: "horizontal" })), "Control (current VSL)");
+  assert.equal(vslHookLabel(lead({ tracking: null })), "(before the test)");
+  assert.equal(vslCutLabel(t({ vsl_hook: "hook2", vsl_cut: "vertical" })), "Hook 2 · vertical (phone)");
+  assert.equal(vslCutLabel(t({ vsl_hook: "hook3", vsl_cut: "horizontal" })), "Hook 3 · horizontal");
+  assert.equal(vslCutLabel(t({ utm_source: "fb" })), "(before the test)");
+  const r = buildReport([t({ vsl_hook: "hook1", vsl_cut: "vertical" }), t({ vsl_hook: "control", vsl_cut: "horizontal" }), lead(), t({ vsl_hook: "hook1", vsl_cut: "horizontal" })], "2026-11-20T00:00:00.000Z");
+  const hooks = r.segments.find((s) => s.key === "vsl_hook")!;
+  assert.deepEqual(hooks.rows.map((x) => [x.label, x.leads]), [["Control (current VSL)", 1], ["Hook 1", 2], ["(before the test)", 1]]);
+  const cuts = r.segments.find((s) => s.key === "vsl_cut")!;
+  assert.deepEqual(cuts.rows.map((x) => x.label), ["Control (current VSL) · horizontal", "Hook 1 · vertical (phone)", "Hook 1 · horizontal", "(before the test)"]);
 });

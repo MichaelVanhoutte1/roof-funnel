@@ -111,6 +111,9 @@
     out.utm_source = (stored && stored.utm_source) || fromUrl.utm_source || inferredSource(document.referrer || "", window.location.href);
     out.referrer = (stored && stored.referrer) || document.referrer || undefined;
     out.submitted_at = new Date().toISOString();
+    // VSL hook test: which video option this visitor was shown (set by the inline script in index.html).
+    var vsl = window.FUNNEL_VSL;
+    if (vsl && vsl.hook) { out.vsl_hook = vsl.hook; out.vsl_cut = vsl.cut; }
     Object.keys(out).forEach(function (k) { if (out[k] === undefined || out[k] === "") delete out[k]; });
     return out;
   }
