@@ -96,13 +96,21 @@ img { border-style: none; vertical-align: middle; }
       margin-bottom: 0;
     }
     section { margin-bottom: 40px; }
+    .legal-footer {
+      border-top: 1px solid #D3DFE8;
+      margin-top: 48px;
+      padding-top: 24px;
+      font-size: 0.875rem;
+      color: #5B6E7E;
+    }
+    .legal-footer p { margin-bottom: 8px; }
   </style>
 <div class="container">
     <h1>Privacy Policy</h1>
-    <p class="last-updated">Last updated: November 9, 2026</p>
+    <p class="last-updated">Last updated: November 19, 2026</p>
 
     <section>
-      <p>Start Roof Rejuvenating LLC (<strong>"Start Roof Rejuvenating,"</strong> <strong>"we,"</strong> <strong>"us,"</strong> or <strong>"our"</strong>) respects your privacy and is committed to protecting the personal information you share with us. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website, use our services, or interact with us through our marketing funnels and communications.</p>
+      <p>Start Roof Rejuvenating, a brand of Ezclick LLC (<strong>"Start Roof Rejuvenating,"</strong> <strong>"we,"</strong> <strong>"us,"</strong> or <strong>"our"</strong>) respects your privacy and is committed to protecting the personal information you share with us. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website, use our services, or interact with us through our marketing funnels and communications.</p>
       <p>By accessing or using our services, you agree to the collection and use of information in accordance with this Privacy Policy.</p>
     </section>
 
@@ -114,7 +122,7 @@ img { border-style: none; vertical-align: middle; }
         <li><strong>Business Information:</strong> Business name, industry, and location details you provide when inquiring about our dealer program.</li>
         <li><strong>Financial Information:</strong> Financial qualification details you submit during the application process, and information we receive from a soft credit check as described under "Soft Credit Check" below, such as your credit score, available credit, estimated income, and debt-to-income ratio.</li>
         <li><strong>Usage &amp; Device Information:</strong> IP address, browser type, operating system, referring URLs, pages visited, and interaction data collected automatically through cookies, pixels, and similar technologies.</li>
-        <li><strong>Communication Information:</strong> Records of correspondence, including emails, SMS messages, and call recordings when you communicate with our team.</li>
+        <li><strong>Communication Information:</strong> Records of correspondence, including emails, SMS (text) messages, your text messaging opt-in and opt-out choices, and call recordings when you communicate with our team.</li>
       </ul>
     </section>
 
@@ -125,16 +133,22 @@ img { border-style: none; vertical-align: middle; }
       <ul>
         <li>To respond to your inquiries and provide customer support.</li>
         <li>To process your application for our dealer program.</li>
+        <li>To send dealers text messages about customer support, onboarding, product shipments, and account updates, as described under "Text Messaging (SMS)" below.</li>
         <li>To send you marketing and promotional communications, including via email, SMS, and social media advertising platforms (you may opt out at any time).</li>
         <li>To personalize your experience and deliver content and product offerings relevant to your interests.</li>
         <li>To improve our website, products, and services through analytics and usage data.</li>
         <li>To create and manage your account and maintain our business relationship with you.</li>
         <li>To comply with legal obligations and enforce our terms.</li>
-        <li>To share information with advertising platforms (such as Meta / Facebook) for the purpose of delivering targeted advertisements, measuring ad performance, and optimizing marketing campaigns. This may include sharing hashed or unhashed contact information (e.g., name, email, phone number) through integrations such as the Meta Conversions API (CAPI) or Meta Pixel.</li>
-        <li>To create custom and lookalike audiences on third-party advertising platforms for targeted advertising purposes.</li>
+        <li>To share information with advertising platforms (such as Meta / Facebook) for the purpose of delivering targeted advertisements, measuring ad performance, and optimizing marketing campaigns. This may include sharing hashed or unhashed contact information (e.g., name and email address) through integrations such as the Meta Conversions API (CAPI) or Meta Pixel. Mobile phone numbers and text messaging opt-in data and consent are excluded from this sharing.</li>
+        <li>To create custom and lookalike audiences on third-party advertising platforms for targeted advertising purposes. Mobile phone numbers and text messaging opt-in data and consent are never used for this.</li>
       </ul>
     </section>
 
+    <!-- FLAG for Michael (2026-11-19): this Soft Credit Check / FCRA authorization is left word for word on purpose.
+         It still names "Start Roof Rejuvenating LLC", while the rest of this policy now names "Start Roof Rejuvenating,
+         a brand of Ezclick LLC". Confirm which legal entity obtains the consumer reports (the SimpleCheck account holder)
+         before editing it; if the authorization wording changes, check whether the survey consent version
+         ("soft-pull-v1" in assets/survey.js and CREDIT_CONSENT_VERSION in the Worker) needs a bump. -->
     <section>
       <h2>Soft Credit Check</h2>
       <p>When you submit a dealer application, you authorize Start Roof Rejuvenating LLC and its service providers to obtain information from your consumer report from one or more consumer reporting agencies, in order to pre-qualify you for our dealer program and its financing options. Submitting the application is your written instruction for us to do so under the Fair Credit Reporting Act.</p>
@@ -153,12 +167,22 @@ img { border-style: none; vertical-align: middle; }
       <h2>Third-Party Sharing</h2>
       <p>We may share your personal information with the following categories of third parties:</p>
       <ul>
-        <li><strong>Service Providers:</strong> Companies that perform services on our behalf, such as CRM platforms, email marketing services, payment processors, customer support tools, and credit pre-qualification providers that work with consumer reporting agencies.</li>
-        <li><strong>Advertising Partners:</strong> Platforms like Meta (Facebook/Instagram) for ad targeting, measurement, and optimization through tools such as the Meta Pixel and Conversions API.</li>
+        <li><strong>Service Providers:</strong> Companies that perform services on our behalf, such as CRM platforms, email marketing services, payment processors, customer support tools, phone and text messaging providers, and credit pre-qualification providers that work with consumer reporting agencies.</li>
+        <li><strong>Advertising Partners:</strong> Platforms like Meta (Facebook/Instagram) for ad targeting, measurement, and optimization through tools such as the Meta Pixel and Conversions API. We do not share mobile phone numbers or text messaging opt-in data and consent with advertising partners.</li>
         <li><strong>Analytics Providers:</strong> Third-party analytics services that help us analyze website traffic and usage patterns.</li>
         <li><strong>Legal &amp; Compliance:</strong> When required by law, regulation, legal process, or governmental request.</li>
       </ul>
       <p>We do not sell your personal information to third parties.</p>
+      <p>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes; text messaging originator opt-in data and consent will not be shared with any third parties.</p>
+    </section>
+
+    <section id="sms">
+      <h2>Text Messaging (SMS)</h2>
+      <p>Start Roof Rejuvenating, a brand of Ezclick LLC, sends text messages to our dealers (our customers) from our company line, <a href="tel:+14697895507">+1 (469) 789-5507</a>. Your customer success manager and our team use it for customer support, onboarding (for example, confirming your onboarding call), product shipment updates, and updates about your dealer account.</p>
+      <p><strong>How you opt in:</strong> you give us your mobile number when you purchase or onboard as a dealer, or you text us first. Message frequency varies. Msg &amp; data rates may apply.</p>
+      <p><strong>Opting out and help:</strong> reply <strong>STOP</strong> to any message to stop receiving texts. We will send one message confirming that you have opted out, and no further texts after that. Opting out of texts does not stop phone calls or email from your customer success manager. Reply <strong>HELP</strong> for help, or contact us at <a href="mailto:mike@startroofrejuvenating.com">mike@startroofrejuvenating.com</a> or <a href="tel:+14697895507">+1 (469) 789-5507</a>.</p>
+      <p><strong>Your mobile information:</strong> No mobile information will be shared with third parties or affiliates for marketing or promotional purposes; text messaging originator opt-in data and consent will not be shared with any third parties. We use your mobile number and your opt-in only to send the messages described above, and our phone and messaging providers process them only to deliver those messages on our behalf.</p>
+      <p>Carriers are not liable for delayed or undelivered messages. The full program terms are in our <a href="/terms/#sms">Terms of Service</a>.</p>
     </section>
 
     <section>
@@ -173,7 +197,7 @@ img { border-style: none; vertical-align: middle; }
         <li><strong>Access:</strong> Request a copy of the personal information we hold about you.</li>
         <li><strong>Correction:</strong> Request correction of inaccurate or incomplete information.</li>
         <li><strong>Deletion:</strong> Request deletion of your personal information, subject to legal obligations.</li>
-        <li><strong>Opt-Out:</strong> Unsubscribe from marketing communications at any time by clicking the unsubscribe link in our emails or replying STOP to SMS messages.</li>
+        <li><strong>Opt-Out:</strong> Unsubscribe from marketing communications at any time by clicking the unsubscribe link in our emails or replying STOP to any text message.</li>
         <li><strong>Do Not Sell:</strong> We do not sell personal information. If applicable laws grant you additional rights, we will honor them.</li>
       </ul>
       <p>To exercise any of these rights, please contact us using the information below.</p>
@@ -203,11 +227,17 @@ img { border-style: none; vertical-align: middle; }
       <h2>Contact Us</h2>
       <p>If you have any questions about this Privacy Policy or wish to exercise your privacy rights, please contact us at:</p>
       <div class="contact-box">
-        <p><strong>Start Roof Rejuvenating LLC</strong></p>
-        <p>501 NE 31st St, Unit 2803, Miami, FL 33137</p>
+        <p><strong>Start Roof Rejuvenating</strong>, a brand of Ezclick LLC</p>
+        <p>30 North Gould Street, Sheridan, WY 82801</p>
         <p>Email: <a href="mailto:mike@startroofrejuvenating.com">mike@startroofrejuvenating.com</a></p>
+        <p>Phone / text: <a href="tel:+14697895507">+1 (469) 789-5507</a></p>
       </div>
     </section>
+
+    <footer class="legal-footer">
+      <p><a href="/">Home</a> &middot; <a href="/privacy-policy/">Privacy Policy</a> &middot; <a href="/terms/">Terms of Service</a></p>
+      <p>&copy; 2026 Start Roof Rejuvenating, a brand of Ezclick LLC</p>
+    </footer>
   </div>
 </div></div>
 </div></div>
