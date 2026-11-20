@@ -1,6 +1,6 @@
 /**
  * Admin API behind the bearer ADMIN_TOKEN (the private /admin/ page is its only client):
- *   GET  /admin/report?from=<ISO>&to=<ISO>   lead tracking report
+ *   GET  /admin/report?from=<ISO>&to=<ISO>   lead tracking report (+ the CSP lead push backlog)
  *   GET  /admin/leads?from=<ISO>&to=<ISO>    the leads behind it (personal data)
  *   GET  /admin/rules · POST /admin/rules    disqualification rules
  *   POST /admin/sync                         pull outcomes from GHL / Fathom / Google Meet now
@@ -10,11 +10,13 @@ import { DEFAULT_RULES, normalizeRules, RULE_QUESTIONS, type Rules } from "./rul
 import { runOutcomeSync, type SyncEnv } from "./outcomes.ts";
 import { parseServiceAccount } from "./google.ts";
 import { buildAppointments, buildLeaderboard, type SalesLead } from "./sales.ts";
+import { pushReport } from "./csp-push-health.ts";
 
 export type AdminEnv = SyncEnv & {
   ADMIN_TOKEN?: string;
   SIMPLECHECK_API_TOKEN?: string;
   SIMPLECHECK_MODE?: string;
+  CSP_LEADS_PUSH_ENABLED?: string;
   RL_EVENTS?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 };
 
@@ -128,6 +130,7 @@ export async function handleAdmin(request: Request, env: AdminEnv, path: string,
     return json({
       ok: true, from, to, generatedAt: nowIso, report: buildReport(results, nowIso),
       sync: sync?.value ? JSON.parse(sync.value) : null,
+      cspPush: await pushReport(env),
       connections: {
         ghl: !!(env.GHL_PIT && env.GHL_LOCATION_ID),
         simplecheck: !!env.SIMPLECHECK_API_TOKEN && (env.SIMPLECHECK_MODE ?? "on").toLowerCase() !== "off",

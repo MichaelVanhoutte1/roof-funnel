@@ -65,29 +65,45 @@ Logs mask names, phones and emails.
 ## Lead push to the CSP
 
 The roof CSP holds every lead as the system of record; D1 stays the Worker's working store and outbox
-(`worker/src/csp-push.ts`, signer `worker/src/webhook-signature.ts`, migration `0014_csp_lead_push.sql`). The Worker
-keeps creating the GHL contact and booking exactly as before; the CSP never writes to GHL.
+(`worker/src/csp-push.ts`, columns `worker/src/csp-push-columns.ts`, alerts `worker/src/csp-push-health.ts`, signer
+`worker/src/webhook-signature.ts`, migration `0014_csp_lead_push.sql`). The Worker keeps creating the GHL contact and
+booking exactly as before; the CSP never writes to GHL.
 
-- **What is sent:** every row of `leads` and `email_captures`, all columns under their D1 names (`tracking` parsed from
-  its JSON), as `{ source: "roof-funnel", schema: 1, records: [{ kind: "lead" | "email_capture", d1_id, row }] }`, at most
-  100 records and 900 KB per request, `POST` to `CSP_LEADS_URL`. Signed with Standard Webhooks v1 (`webhook-id`,
-  `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 of id.timestamp.body>`, key = the secret's UTF-8 bytes).
-  The CSP answers `applied` / `unchanged` / `rejected` per record.
+- **What is sent:** every row of `leads` and `email_captures`, as `{ source: "roof-funnel", schema: 2, records: [{ kind:
+  "lead" | "email_capture", d1_id, row }] }`, at most 100 records and 900 KB per request, `POST` to `CSP_LEADS_URL`.
+  `row` holds an explicit allowlist of columns under their D1 names (`csp-push-columns.ts`: the contract's columns,
+  `tracking` parsed from its JSON, INTEGER columns rounded, plus `csp_changed_at`). `credit_identity` and the outbox
+  bookkeeping are never sent, and a column a later migration adds is not sent until it is classified there (a test
+  fails until then). Signed with Standard Webhooks v1 (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64
+  HMAC-SHA256 of id.timestamp.body>`, key = the secret's UTF-8 bytes). Redirects are never followed. The CSP answers
+  `applied` / `unchanged` / `rejected` per record.
+- **Ordering (schema 2):** the CSP applies a record only when `row.csp_changed_at` is strictly newer than what it holds.
+  `updated_at` moves only on a survey save or a booking, so ordering on it would drop the credit result, route, GHL
+  status, outcome sync and identity wipes as "unchanged". A CSP that only accepts schema 1 answers 400, and the rows
+  stay pending.
 - **Change tracking:** `csp_changed_at` is moved forward by SQLite triggers on every write to a row (survey save,
   route, credit result, phone lookup, GHL status, booking, outcome sync, manual outcomes), so no write site has to
   remember the push and `updated_at` keeps its meaning. A row is pending while `csp_synced_updated_at` (the stamp the
-  CSP last acknowledged) is empty or older; an acknowledgement only counts if the row did not change while in flight.
-  Failures count `csp_sync_attempts` and keep `csp_sync_error`.
+  CSP last acknowledged) is empty or older; an acknowledgement or a failure only counts against the stamp that was sent.
+  Failures count `csp_sync_attempts` and keep `csp_sync_error`; a record the CSP refuses waits `csp_next_attempt_at`
+  (2 minutes doubling to 24 hours), cleared by any new write to the row.
 - **When:** right after a visitor's write (lead submit once its route is settled, email capture, booking), in the
-  background, and a cron every 2 minutes (`*/2 * * * *`) that drains what is pending: rows that never failed first,
-  oldest change first, up to 3 × 100 rows per run, stopping at the first failure. The first run after switching on is
-  the backfill of every historical row (about 300 rows per run).
-- **Config:** `CSP_LEADS_PUSH_ENABLED` (`wrangler.toml` var, `"false"` by default), `CSP_LEADS_URL` (var, the full https
-  URL of the CSP's `/webhook/funnel-leads`, empty by default), secret `FUNNEL_LEADS_SECRET` (Doppler `roofreju-csp`/`prd`,
-  synced on deploy; the same value as the CSP's). Nothing is sent unless all three are set. Keep the two vars in
-  `wrangler.toml`, not in Doppler (the secret sync would clash with a var of the same name).
-- **Deploy order:** `npm run migrate`, then `npm run deploy` (CI does both). A Worker running without 0014 logs the push
-  as failed and captures leads as before.
+  background, and a cron every 2 minutes (`*/2 * * * *`) that drains what is pending: up to 3 × 100 rows per run, half
+  of each batch kept for email captures, rows that never failed first, then oldest change. A run stops at the first
+  failed request; a refused record does not stop it. The first run after switching on is the backfill of every
+  historical row.
+- **Alerts:** #lead-alerts (`SLACK_LEAD_ALERTS_WEBHOOK`) hears when the push has failed for 30 minutes straight (CSP
+  down, secret mismatch, wrong schema, the switch on with a bad URL or secret) and when the CSP refuses records, each at
+  most every 6 hours, with counts and error codes only. `GET /admin/report` carries the same numbers as `cspPush`.
+- **Config:** `CSP_LEADS_PUSH_ENABLED` (`wrangler.toml` var, `"false"` by default), `CSP_LEADS_URL` (var, empty by
+  default), secret `FUNNEL_LEADS_SECRET` (Doppler `roofreju-csp`/`prd`, synced on deploy; the same value as the CSP's,
+  at least 32 characters). Nothing is sent unless all three are set. Keep the two vars in `wrangler.toml`, not in
+  Doppler (the secret sync would clash with a var of the same name).
+- **Target:** the production Worker sends to `https://csp-api.startroofrejuvenating.com/webhook/funnel-leads` only. It
+  carries real lead PII and credit data, so it refuses any other host (`CSP_HOSTS`), roof staging included.
+- **Deploy order:** the CSP side first (it must accept schema 2 and order on `csp_changed_at`), then `npm run migrate`,
+  then `npm run deploy` (CI does both), then switch on. A Worker running without 0014 logs the push as failed (and
+  alerts after 30 minutes if switched on) and captures leads as before.
 
 ## Soft credit check (SimpleCheck)
 

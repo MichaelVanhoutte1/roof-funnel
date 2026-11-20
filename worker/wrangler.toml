@@ -50,8 +50,9 @@ CORTANA_WEBHOOKS = """{
 }"""
 
 # Lead push to the CSP (worker/src/csp-push.ts): every lead and email capture, signed with the FUNNEL_LEADS_SECRET
-# secret, POSTed to CSP_LEADS_URL (the CSP's /webhook/funnel-leads route, full https URL). Off until the switch is "true"
-# and both the URL and the secret are set. The first run after switching on backfills every historical row.
+# secret, POSTed to CSP_LEADS_URL. Production only ever sends to https://csp-api.startroofrejuvenating.com/webhook/funnel-leads
+# (any other host is refused). Off until the switch is "true" and both the URL and the secret are set; switch on only
+# once the CSP accepts schema 2. The first run after switching on backfills every historical row.
 CSP_LEADS_PUSH_ENABLED = "false"
 CSP_LEADS_URL = ""
 

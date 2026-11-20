@@ -80,8 +80,25 @@ export function leadWithdrawnMessage(l: { id: number; name?: string | null }): R
   };
 }
 
-export async function postSlack(webhookUrl: string, body: Record<string, unknown>): Promise<void> {
-  const res = await fetch(webhookUrl, {
+/** The lead push to the CSP is failing or the CSP refuses records (csp-push-health.ts). Counts and codes only. */
+export type CspPushProblem =
+  | { kind: "outage"; since: string; error: string | null; pending: number }
+  | { kind: "rejected"; rejected: number; codes: string[] };
+
+export function cspPushProblemMessage(p: CspPushProblem): Record<string, unknown> {
+  const text = p.kind === "outage"
+    ? `Leads are not reaching the CSP: the push has failed since ${p.since} (${p.error ?? "unknown"}). ${p.pending} row(s) waiting.`
+    : `The CSP refused ${p.rejected} lead record(s)${p.codes.length ? ` (${p.codes.join(", ")})` : ""}. They are retried with backoff and are missing on the CSP until fixed.`;
+  return {
+    text,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `⚠️ *Lead push to the CSP*\n${esc(text)}\nLeads are still captured and booked as usual.` } },
+    ],
+  };
+}
+
+export async function postSlack(webhookUrl: string, body: Record<string, unknown>, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const res = await fetchImpl(webhookUrl, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`Slack ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
