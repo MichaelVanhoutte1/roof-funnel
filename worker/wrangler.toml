@@ -49,13 +49,21 @@ CORTANA_WEBHOOKS = """{
   "qualified": "https://use.startroofrejuvenating.com/api/webhook/a9c69e03-4be6-4f09-b9a4-8e1727956719/eb34c0b6-8aa1-4a13-bcb9-2b9c029d9a97"
 }"""
 
+# Lead push to the CSP (worker/src/csp-push.ts): every lead and email capture, signed with the FUNNEL_LEADS_SECRET
+# secret, POSTed to CSP_LEADS_URL (the CSP's /webhook/funnel-leads route, full https URL). Off until the switch is "true"
+# and both the URL and the secret are set. The first run after switching on backfills every historical row.
+CSP_LEADS_PUSH_ENABLED = "false"
+CSP_LEADS_URL = ""
+
 # 1. Outcome sync (GHL pipeline, setter call log, closer appointments, Fathom / Google Meet attendance) on the half hour.
 # 2. Cortana stage milestones every ten minutes in between (never the same minute: each run has its own subrequest
 #    budget). The second expression is matched verbatim in index.ts (CORTANA_CRON) — change both together.
 # 3. Abandoned survey starts → GHL (abandoned.ts), every ten minutes on its own minute; matched verbatim as
 #    ABANDONED_CRON — change both together.
+# 4. CSP lead push every two minutes (csp-push.ts): drains pending rows; does nothing while CSP_LEADS_PUSH_ENABLED is
+#    off. Matched verbatim as CSP_PUSH_CRON — change both together.
 [triggers]
-crons = ["*/30 * * * *", "5-55/10 * * * *", "2-52/10 * * * *"]
+crons = ["*/30 * * * *", "5-55/10 * * * *", "2-52/10 * * * *", "*/2 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

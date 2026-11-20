@@ -62,6 +62,33 @@ Cloudflare Worker at `https://api.startroofrejuvenating.com` with a D1 database 
 
 Logs mask names, phones and emails.
 
+## Lead push to the CSP
+
+The roof CSP holds every lead as the system of record; D1 stays the Worker's working store and outbox
+(`worker/src/csp-push.ts`, signer `worker/src/webhook-signature.ts`, migration `0014_csp_lead_push.sql`). The Worker
+keeps creating the GHL contact and booking exactly as before; the CSP never writes to GHL.
+
+- **What is sent:** every row of `leads` and `email_captures`, all columns under their D1 names (`tracking` parsed from
+  its JSON), as `{ source: "roof-funnel", schema: 1, records: [{ kind: "lead" | "email_capture", d1_id, row }] }`, at most
+  100 records and 900 KB per request, `POST` to `CSP_LEADS_URL`. Signed with Standard Webhooks v1 (`webhook-id`,
+  `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 of id.timestamp.body>`, key = the secret's UTF-8 bytes).
+  The CSP answers `applied` / `unchanged` / `rejected` per record.
+- **Change tracking:** `csp_changed_at` is moved forward by SQLite triggers on every write to a row (survey save,
+  route, credit result, phone lookup, GHL status, booking, outcome sync, manual outcomes), so no write site has to
+  remember the push and `updated_at` keeps its meaning. A row is pending while `csp_synced_updated_at` (the stamp the
+  CSP last acknowledged) is empty or older; an acknowledgement only counts if the row did not change while in flight.
+  Failures count `csp_sync_attempts` and keep `csp_sync_error`.
+- **When:** right after a visitor's write (lead submit once its route is settled, email capture, booking), in the
+  background, and a cron every 2 minutes (`*/2 * * * *`) that drains what is pending: rows that never failed first,
+  oldest change first, up to 3 × 100 rows per run, stopping at the first failure. The first run after switching on is
+  the backfill of every historical row (about 300 rows per run).
+- **Config:** `CSP_LEADS_PUSH_ENABLED` (`wrangler.toml` var, `"false"` by default), `CSP_LEADS_URL` (var, the full https
+  URL of the CSP's `/webhook/funnel-leads`, empty by default), secret `FUNNEL_LEADS_SECRET` (Doppler `roofreju-csp`/`prd`,
+  synced on deploy; the same value as the CSP's). Nothing is sent unless all three are set. Keep the two vars in
+  `wrangler.toml`, not in Doppler (the secret sync would clash with a var of the same name).
+- **Deploy order:** `npm run migrate`, then `npm run deploy` (CI does both). A Worker running without 0014 logs the push
+  as failed and captures leads as before.
+
 ## Soft credit check (SimpleCheck)
 
 A completed application whose capital answer starts with "Yes" gets one SimpleCheck Qualify pre-qualification
