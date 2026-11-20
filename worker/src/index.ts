@@ -9,6 +9,7 @@
  *   /admin/*            report, leads, disqualification rules, outcome sync (admin.ts; same bearer token)
  *   cron (every 30 min) outcome sync from GHL / Fathom / Google Meet (outcomes.ts)
  *   cron (every 10 min) abandoned survey starts (phone saved, capital never answered) → GHL, tagged abandoned-survey (abandoned.ts)
+ *   cron (every 2 min)  pending leads + email captures → CSP, signed (csp-push.ts; also pushed right after each visitor write)
  *
  * Routing: a completed application goes to the calendar unless one of its answers is switched to
  * "disqualify" in the rules, or a credit rule is on and the soft credit check result breaks it.
@@ -37,6 +38,7 @@ import { lookupPhone, phoneLookupConfig, type LineType, type PhoneLookup } from 
 import { handleAdmin, loadRules } from "./admin.ts";
 import { runOutcomeSync } from "./outcomes.ts";
 import { ABANDONED_CRON, clearAbandonedTag, syncAbandoned } from "./abandoned.ts";
+import { CSP_PUSH_CRON, drainPending, pushOne } from "./csp-push.ts";
 import { eventPayload, MILESTONE_COLUMNS, milestonePayload, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap, type MilestoneRow, type Tracking } from "./cortana.ts";
 import { booksCloser, createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
@@ -82,6 +84,11 @@ export interface Env {
   /** Closer-call attendance for the roof business (all optional; see outcomes.ts). */
   FATHOM_API_KEY?: string;
   GOOGLE_MEET_SERVICE_ACCOUNT?: string;
+  /** Lead push to the CSP (csp-push.ts): "true" + an https URL + the secret, or nothing is sent. */
+  CSP_LEADS_PUSH_ENABLED?: string;
+  CSP_LEADS_URL?: string;
+  /** Standard Webhooks signing secret shared with the CSP (secret). */
+  FUNNEL_LEADS_SECRET?: string;
 }
 
 const HONEYPOT_FIELD = "contact_fax";
@@ -458,6 +465,8 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   const consent = str(body.credit_consent, 40) === CREDIT_CONSENT_VERSION && !!origin && csv(env.ALLOWED_ORIGINS).includes(origin);
   const settle = settleLead(env, ctx, { row, meta, partial, rules, answers, answerDq, consent, tracking, country, tag });
   ctx.waitUntil(settle.catch(() => {}));
+  // The stored lead with its final route goes to the CSP; later writes (credit result, GHL status) follow on the cron.
+  ctx.waitUntil(settle.catch(() => {}).then(() => pushOne(env, "lead", "id", row.id)));
   let dqReason = answerDq;
   try {
     dqReason = await settle;
@@ -718,6 +727,7 @@ async function handleEmailCapture(request: Request, env: Env, ctx: ExecutionCont
   ).bind(email, input.name ?? null, input.city ?? null, input.timeline ?? null, input.business_owner ?? null, input.capital ?? null,
          tracking ? JSON.stringify(tracking) : null, ip, country).run();
   console.log("[contact] email capture", maskName(name), maskEmail(email), "country:", country);
+  ctx.waitUntil(pushOne(env, "email_capture", "email", email));
   const cfg = syncMode(env) === "all" ? contactsConfig(env) : null; // email-only captures reach GHL only in "all" mode
   if (cfg) ctx.waitUntil((async () => {
     try {
@@ -1164,6 +1174,7 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
              booked_at = ${SQL_NOW}, updated_at = ${SQL_NOW} WHERE id = ?6`,
     ).bind(appointmentId, new Date(startMs).toISOString(), new Date(endMs).toISOString(), tz, contactId, lead.id).run();
     console.log("[book] appointment", appointmentId, closer ? "(closer)" : "(setter)", "lead", lead.id, maskName(lead.name), maskPhone(phone), start, tz);
+    ctx.waitUntil(pushOne(env, "lead", "id", lead.id));
     // Cortana's matching stage step, straight away (the cron pass would catch it later anyway).
     const milestone = closer ? "closer_booked" : "setter_self_booked";
     if (webhookMap(env.CORTANA_WEBHOOKS)[milestone]) ctx.waitUntil((async () => {
@@ -1211,9 +1222,14 @@ export default {
     if (request.method === "POST" && path === "/lead/partial") return handleLead(request, env, ctx, true);
     return json({ ok: false, error: "Not found" }, 404, corsHeaders(request, env));
   },
-  // Three crons (wrangler.toml), each its own invocation with its own subrequest budget: the outcome sync on the
-  // half hour, the Cortana stage-milestone pass and the abandoned-start sync on their own minutes in between.
+  // Four crons (wrangler.toml), each its own invocation with its own subrequest budget: the outcome sync on the
+  // half hour, the Cortana stage-milestone pass and the abandoned-start sync on their own minutes in between, and the
+  // CSP lead push every two minutes.
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (event.cron === CSP_PUSH_CRON) {
+      ctx.waitUntil(drainPending(env)); // logs only when it ran, so the 2-minute tick stays quiet while the switch is off
+      return;
+    }
     const job = event.cron === CORTANA_CRON ? "cortana milestones" : event.cron === ABANDONED_CRON ? "abandoned starts" : "outcome sync";
     console.log("[cron]", JSON.stringify(event.cron), job);
     ctx.waitUntil(job === "cortana milestones" ? relayMilestones(env) : job === "abandoned starts" ? syncAbandoned(env) : runOutcomeSync(env));
