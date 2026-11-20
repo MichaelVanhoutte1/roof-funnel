@@ -25,7 +25,7 @@ const post = (path: string, body: unknown) => new Request(`https://api.example.t
   body: JSON.stringify(body),
 });
 
-test("scheduled: the push cron runs the drain only (never the outcome sync); wrangler.toml keeps it off", async () => {
+test("scheduled: the push cron runs the drain only (never the outcome sync); wrangler.toml switches it on to the prod CSP route only", async () => {
   const { d1 } = realDb();
   const c = ctx();
   await worker.scheduled!({ cron: CSP_PUSH_CRON, scheduledTime: Date.now(), noRetry() {} } as ScheduledController, { DB: d1 } as never, c.ctx);
@@ -33,8 +33,8 @@ test("scheduled: the push cron runs the drain only (never the outcome sync); wra
   assert.deepEqual(await c.waits[0], { sent: 0, synced: 0, failed: 0, skipped: "off" });
   const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.ok(toml.includes(`"${CSP_PUSH_CRON}"`), "the cron is in wrangler.toml verbatim");
-  assert.match(toml, /^CSP_LEADS_PUSH_ENABLED = "false"$/m);
-  assert.match(toml, /^CSP_LEADS_URL = ""$/m);
+  assert.match(toml, /^CSP_LEADS_PUSH_ENABLED = "true"$/m);
+  assert.match(toml, /^CSP_LEADS_URL = "https:\/\/csp-api\.startroofrejuvenating\.com\/webhook\/funnel-leads"$/m);
 });
 
 test("POST /contact stores the capture and pushes it in the background; the visitor's answer does not wait on the CSP", async () => {
