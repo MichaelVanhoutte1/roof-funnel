@@ -2,7 +2,8 @@
  * What of a D1 row the CSP receives (csp-push.ts). An explicit allowlist per table: a column a later migration adds is
  * never sent until someone classifies it here (test/csp-push.test.ts fails until every column is either sent or held
  * back). The sent set is the contract's (every column of `leads` at migration 0013 and of `email_captures` at 0004),
- * minus `credit_identity`, plus the ordering key `csp_changed_at`.
+ * minus `credit_identity`, plus the ordering key `csp_changed_at`, plus `video_watches` (0015; a CSP that does not know
+ * it yet ignores the key).
  */
 export type Kind = "lead" | "email_capture";
 
@@ -22,6 +23,8 @@ const LEAD_COLUMNS = [
   "appointment_status", "setter_host", "setter_attended_manual", "closer_attended_manual", "won_manual", "cash_manual",
   "close_date_manual", "outcome_manual_at", "phone_line_type", "phone_carrier", "phone_lookup_at", "booked_at",
   "ghl_abandoned_at", "ghl_abandoned_attempts", "csp_changed_at",
+  // 0015: the lead's video watch aggregate ({"<video_key>": {pct, sec, dur, first, last}}), sent as a JSON object.
+  "video_watches",
 ] as const;
 
 const CAPTURE_COLUMNS = [
@@ -53,7 +56,10 @@ export const INTEGER_COLUMNS: Record<Kind, readonly string[]> = {
   email_capture: ["id"],
 };
 
-function parseTracking(raw: unknown): Record<string, unknown> | null {
+/** TEXT columns holding a JSON object, sent parsed (an object, or null when empty or not an object). */
+export const JSON_COLUMNS: Record<Kind, readonly string[]> = { lead: ["tracking", "video_watches"], email_capture: ["tracking"] };
+
+function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (raw == null) return null;
   if (typeof raw === "object") return Array.isArray(raw) ? null : (raw as Record<string, unknown>);
   try {
@@ -64,11 +70,11 @@ function parseTracking(raw: unknown): Record<string, unknown> | null {
   }
 }
 
-/** The row as the CSP receives it: allowlisted columns only (missing = null), tracking parsed, integers rounded. */
+/** The row as the CSP receives it: allowlisted columns only (missing = null), JSON columns parsed, integers rounded. */
 export function cspRow(kind: Kind, raw: Record<string, unknown>): Record<string, unknown> {
   const row: Record<string, unknown> = {};
   for (const c of SENT_COLUMNS[kind]) row[c] = raw[c] ?? null;
-  row.tracking = parseTracking(row.tracking);
+  for (const c of JSON_COLUMNS[kind]) row[c] = parseJsonObject(row[c]);
   for (const c of INTEGER_COLUMNS[kind]) {
     const v = row[c];
     if (typeof v === "number" && Number.isFinite(v) && !Number.isInteger(v)) row[c] = Math.round(v);

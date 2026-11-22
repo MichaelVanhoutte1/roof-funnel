@@ -303,7 +303,9 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
          data-calendar = GHL booking-widget URL shown after a qualified submit (empty = thanks panel). -->
     <link rel="stylesheet" href="assets/survey.css?v=202611101530">
     <div id="dealer-survey" data-api="https://api.startroofrejuvenating.com" data-calendar=""></div>
-    <script src="assets/survey.js?v=202611191800" defer></script>
+    <!-- Video watch tracking (the VSL); before survey.js, which reads the srr_vid visitor id it sets. -->
+    <script src="/assets/video-watch.js?v=202611221600" data-api="https://api.startroofrejuvenating.com" defer></script>
+    <script src="assets/survey.js?v=202611221600" defer></script>
   </div>
 </div>
 </section>

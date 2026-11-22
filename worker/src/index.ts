@@ -10,6 +10,8 @@
  *   cron (every 30 min) outcome sync from GHL / Fathom / Google Meet (outcomes.ts)
  *   cron (every 10 min) abandoned survey starts (phone saved, capital never answered) → GHL, tagged abandoned-survey (abandoned.ts)
  *   cron (every 2 min)  pending leads + email captures → CSP, signed (csp-push.ts; also pushed right after each visitor write)
+ *   POST /video-watch   per-viewer video watch progress from the funnel pages → D1 video_watches → leads.video_watches (video-watch.ts)
+ *   cron (every 10 min) also links recent unlinked video watches to their leads (video-watch.ts)
  *
  * Routing: a completed application goes to the calendar unless one of its answers is switched to
  * "disqualify" in the rules, or a credit rule is on and the soft credit check result breaks it.
@@ -40,6 +42,7 @@ import { runOutcomeSync } from "./outcomes.ts";
 import { ABANDONED_CRON, clearAbandonedTag, syncAbandoned } from "./abandoned.ts";
 import { CSP_PUSH_CRON, drainPending, pushOne } from "./csp-push.ts";
 import { eventPayload, MILESTONE_COLUMNS, milestonePayload, relayEvent, relayMilestones, sendMilestoneOnce, webhookMap, type MilestoneRow, type Tracking } from "./cortana.ts";
+import { linkLeadViewer, linkPendingWatches, parseWatchPost, recordWatch, WATCH_MAX_BODY_BYTES } from "./video-watch.ts";
 import { booksCloser, createAppointment, freeSlots, slotDurationMinutes, updateContactCredit, upsertSurveyContact, type ContactsConfig, type GhlConfig } from "./ghl.ts";
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -456,6 +459,8 @@ async function handleLead(request: Request, env: Env, ctx: ExecutionContext, par
   );
   console.log(`[${tag}] stored lead`, row.id, maskName(row.name), maskPhone(row.phone), "route:", row.route, "country:", country);
   if (lookup?.fresh) ctx.waitUntil(storePhoneLookup(env, row.id, lookup));
+  // Videos this visitor watched before the lead existed (the opt-in VSL) now belong to it (tracking.ak_tid / srr_vid).
+  if (tracking) ctx.waitUntil(linkLeadViewer(env.DB, row.id, tracking).catch((err) => console.error("[video] link failed for lead", row.id, String(err).slice(0, 160))));
 
   // The lead is stored. Everything else is registered up front, so it finishes even if the visitor closes the
   // tab while a credit rule is still waiting on the check.
@@ -1197,6 +1202,31 @@ async function handleBook(request: Request, env: Env, ctx: ExecutionContext): Pr
   }
 }
 
+/**
+ * POST /video-watch (assets/video-watch.js; sent as text/plain so the browser needs no preflight, and by sendBeacon
+ * when the page is left). Always 204 with no body once past the origin, rate and size gates: the visitor learns
+ * nothing, and the merge runs in the background.
+ */
+async function handleVideoWatch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cors = corsHeaders(request, env);
+  const empty = (status: number) => new Response(null, { status, headers: { ...cors, "Cache-Control": "no-store" } });
+  if (!originAllowed(request, env)) return empty(403);
+  if (env.RL_EVENTS) {
+    try { const { success } = await env.RL_EVENTS.limit({ key: `vw:${clientIp(request)}` }); if (!success) return empty(429); }
+    catch (err) { console.warn("[video] rl failed (open):", String(err)); }
+  }
+  if (Number(request.headers.get("content-length") ?? "0") > WATCH_MAX_BODY_BYTES) return empty(413);
+  const text = await request.text();
+  if (text.length > WATCH_MAX_BODY_BYTES) return empty(413);
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { return empty(400); }
+  const post = parseWatchPost(raw);
+  if (!post) return empty(400);
+  if (!countryAllowed(clientCountry(request), env) || !post.videos.length) return empty(204);
+  ctx.waitUntil(recordWatch(env.DB, post).catch((err) => console.error("[video] watch not stored:", String(err).slice(0, 200))));
+  return empty(204);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1216,6 +1246,7 @@ export default {
     }
     if (request.method === "GET" && path === "/slots") return handleSlots(request, env);
     if (request.method === "POST" && path === "/event") return handleEvent(request, env, ctx);
+    if (request.method === "POST" && path === "/video-watch") return handleVideoWatch(request, env, ctx);
     if (request.method === "POST" && path === "/contact") return handleEmailCapture(request, env, ctx);
     if (request.method === "POST" && path === "/book") return handleBook(request, env, ctx);
     if (request.method === "POST" && path === "/lead") return handleLead(request, env, ctx, false);
@@ -1232,6 +1263,11 @@ export default {
     }
     const job = event.cron === CORTANA_CRON ? "cortana milestones" : event.cron === ABANDONED_CRON ? "abandoned starts" : "outcome sync";
     console.log("[cron]", JSON.stringify(event.cron), job);
+    if (job === "cortana milestones") {
+      ctx.waitUntil(linkPendingWatches(env.DB)
+        .then((r) => { if (r.linked) console.log("[video] linked", r.linked, "watch rows to", r.leads, "leads"); })
+        .catch((err) => console.error("[video] link pass failed:", String(err).slice(0, 200))));
+    }
     ctx.waitUntil(job === "cortana milestones" ? relayMilestones(env) : job === "abandoned starts" ? syncAbandoned(env) : runOutcomeSync(env));
   },
 } satisfies ExportedHandler<Env>;
