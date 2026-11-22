@@ -105,6 +105,40 @@ booking exactly as before; the CSP never writes to GHL.
   then `npm run deploy` (CI does both), then switch on. A Worker running without 0014 logs the push as failed (and
   alerts after 30 minutes if switched on) and captures leads as before.
 
+## Video watch tracking (per lead)
+
+Who watched which video, and how much, on each lead, so it can be set against show rate. Cortana keeps its own watch
+data on its own server with no API to read it back, so the funnel measures it alongside (Cortana's embed is untouched).
+
+- **Script:** `assets/video-watch.js` on `/`, `/info/` and `/thankyou-page/`. It tracks every Cortana player
+  (`ckv_embed_<uuid>`, a plain `<video>`), every `<wistia-player media-id>` (Wistia Aurora events `time-update`, `play`,
+  `pause`, `ended`, `seeking`, `seeked`; properties `currentTime`, `duration`, `muted`, `volume`, `state`) and the
+  Vidalytics VSL (`vidalytics_embed_<embedId>`, a plain `<video>`).
+- **Per video:** `key` (`cortana:<uuid>` | `wistia:<mediaId>` | `vidalytics:<embedId>`), `duration`, `max_pct` (the furthest
+  position reached while playing ÷ duration, 0–100) and `watched_seconds` (the union of the played ranges, so seeks and
+  replays are not double-counted). Only audible playback counts: Cortana and Vidalytics start a silent muted preview on
+  load. Ranges are kept in localStorage (`srr_vw_v1`), so a reload or a later visit on the same device adds up.
+- **Identity:** Cortana's `ak_tid` (cookie, legacy cookie `ak_session_id`, localStorage `ak_fallback_ak_tid`), our own
+  visitor id `srr_vid` (cookie on `.startroofrejuvenating.com` for a year + localStorage), and `?cid=` (GHL contact id; put
+  `?cid={{contact.id}}` on the page link in GHL texts and emails), `?email=`, `?phone=` from the URL. The survey adds
+  `ak_tid` and `srr_vid` to the lead's `tracking`.
+- **Sent:** `POST /video-watch` as `text/plain` JSON (no preflight) every 15 s while a video plays, after a pause or the
+  end, and by `sendBeacon` when the page is hidden or left; only videos whose figures moved. `?vw_debug=1` logs each payload.
+- **Worker** (`worker/src/video-watch.ts`, migration `0015_video_watches.sql`): origin check, 60/min per IP (the events
+  limiter, own key), 8 KB and 30 videos per post, strict key / id formats, numbers clamped, US-only like the lead
+  endpoints; always 204 with no body. Rows are `video_watches` (one per viewer × video, primary key `(viewer_key,
+  video_key)`, `viewer_key` = `ak:<tid>` else `vid:<uuid>`), merged monotonically (max `max_pct`, max `watched_seconds`).
+- **Lead resolution, in order:** `cid` = `leads.ghl_contact_id` → phone (also the superseded phone) → email (any case) →
+  the lead this viewer's earlier rows are linked to → a lead from the last 60 days whose tracking carries the same
+  `ak_tid` / `srr_vid` (first post of a viewer only). Unresolved rows wait with `lead_id` NULL and are linked when a lead
+  is saved with that `ak_tid` / `srr_vid` (the VSL watched before opting in) and by the 10-minute cron (with the Cortana
+  milestones: GHL contact ids that now belong to a lead, recent leads' tracking ids). A row's first link wins.
+- **On the lead:** `leads.video_watches` = `{"<video_key>": {"pct", "sec", "dur", "first", "last"}}`, merged over every
+  viewer key of the lead (max pct / sec, min first, max last), rewritten only when it changes, so the lead is re-pushed
+  to the CSP exactly then. It is in the CSP push allowlist and sent as a JSON object (like `tracking`).
+- **Deploy:** the merge to main runs the migration and the deploy (CI); GitHub Pages ships the script. Either order with
+  the CSP is safe (the CSP ignores keys it does not know). Data the pages sent before the deploy is not recoverable.
+
 ## Soft credit check (SimpleCheck)
 
 A completed application whose capital answer starts with "Yes" gets one SimpleCheck Qualify pre-qualification

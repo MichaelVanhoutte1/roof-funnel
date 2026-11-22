@@ -101,6 +101,18 @@
     sessionSet(TRACK_KEY, JSON.stringify(merged));
   }
 
+  function localGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function viewerCookie(name) {
+    try {
+      var parts = document.cookie ? document.cookie.split("; ") : [];
+      for (var i = 0; i < parts.length; i++) {
+        var eq = parts[i].indexOf("=");
+        if (eq > 0 && parts[i].slice(0, eq) === name) return decodeURIComponent(parts[i].slice(eq + 1));
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function trackingForSubmit() {
     var stored = null;
     try { stored = JSON.parse(sessionGet(TRACK_KEY) || "null"); } catch (e) {}
@@ -114,6 +126,12 @@
     // VSL hook test: which video option this visitor was shown (set by the inline script in index.html).
     var vsl = window.FUNNEL_VSL;
     if (vsl && vsl.hook) { out.vsl_hook = vsl.hook; out.vsl_cut = vsl.cut; }
+    // Viewer ids, so the lead is linked to the videos this visitor watched (assets/video-watch.js, worker video-watch.ts):
+    // Cortana's ak_tid and our own srr_vid (set by video-watch.js).
+    var ak = viewerCookie("ak_tid") || viewerCookie("ak_session_id") || localGet("ak_fallback_ak_tid");
+    if (ak && /^[A-Za-z0-9._:-]{8,128}$/.test(ak)) out.ak_tid = ak;
+    var vid = viewerCookie("srr_vid") || localGet("srr_vid");
+    if (vid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vid)) out.srr_vid = vid.toLowerCase();
     Object.keys(out).forEach(function (k) { if (out[k] === undefined || out[k] === "") delete out[k]; });
     return out;
   }
