@@ -230,24 +230,35 @@ export async function linkLeadViewer(db: Db, leadId: number, tracking: Record<st
 }
 
 /**
- * Cron pass (every 10 minutes, with the Cortana milestones): links recent unlinked rows whose GHL contact id now
- * belongs to a lead (the contact id is written a few seconds after the lead save), and rows of a viewer whose
- * ak_tid / srr_vid a recent lead's tracking carries (a backstop for `linkLeadViewer`). Index lookups only.
+ * Cron pass (every 10 minutes, with the Cortana milestones):
+ *  1. links unlinked rows whose GHL contact id belongs to a lead: recent rows (the contact id is written a few seconds
+ *     after the lead save) and flagged rows of any age (the Cortana history import). A join, so contact ids with no
+ *     lead row (GHL contacts that never came through the funnel) never crowd out the ones that resolve;
+ *  2. links rows of a viewer whose ak_tid / srr_vid a recent lead's tracking carries (a backstop for `linkLeadViewer`);
+ *  3. rebuilds the aggregate of every lead with flagged rows (`aggregate_pending = 1`: the import, or set by hand) and
+ *     clears the flag, at most MAX_AGGREGATES_PER_RUN leads per run (the rest follow on the next runs).
+ * Index lookups only.
  */
 export async function linkPendingWatches(db: Db, now = new Date()): Promise<{ linked: number; leads: number }> {
   const since = daysAgo(now, LINK_WINDOW_DAYS);
   const touched = new Set<number>();
   let linked = 0;
+  const applyBatch = async (statements: D1PreparedStatement[], ids: number[]) => {
+    if (!statements.length) return;
+    const results = (await db.batch(statements)) as Array<{ meta?: { changes?: number } }>;
+    results.forEach((res, i) => { const n = res?.meta?.changes ?? 0; if (n > 0) { linked += n; touched.add(ids[i]); } });
+  };
 
-  const cids = await db.prepare(
-    "SELECT DISTINCT cid FROM video_watches WHERE lead_id IS NULL AND last_at > ?1 AND cid IS NOT NULL LIMIT 100",
-  ).bind(since).all<{ cid: string }>();
-  for (const { cid } of cids.results ?? []) {
-    const id = await leadIdBy(db, "SELECT id FROM leads WHERE ghl_contact_id = ?1 ORDER BY id DESC LIMIT 1", cid);
-    if (!id) continue;
-    const res = await db.prepare("UPDATE video_watches SET lead_id = ?1 WHERE lead_id IS NULL AND cid = ?2").bind(id, cid).run();
-    if ((res.meta.changes ?? 0) > 0) { linked += res.meta.changes ?? 0; touched.add(id); }
-  }
+  const byCid = await db.prepare(
+    `SELECT w.cid AS cid, MAX(l.id) AS id FROM video_watches w JOIN leads l ON l.ghl_contact_id = w.cid
+     WHERE w.lead_id IS NULL AND w.cid IS NOT NULL AND (w.last_at > ?1 OR w.aggregate_pending = 1)
+     GROUP BY w.cid LIMIT 100`,
+  ).bind(since).all<{ cid: string; id: number }>();
+  const cidRows = byCid.results ?? [];
+  await applyBatch(
+    cidRows.map((r) => db.prepare("UPDATE video_watches SET lead_id = ?1 WHERE lead_id IS NULL AND cid = ?2").bind(Number(r.id), r.cid)),
+    cidRows.map((r) => Number(r.id)),
+  );
 
   const recent = await db.prepare(
     `SELECT id, json_extract(tracking, '$.ak_tid') AS ak, json_extract(tracking, '$.srr_vid') AS vid FROM leads
@@ -267,12 +278,18 @@ export async function linkPendingWatches(db: Db, now = new Date()): Promise<{ li
          AND ((?2 IS NOT NULL AND ak_tid = ?2) OR (?3 IS NOT NULL AND srr_vid = ?3))`,
     ).bind(Number(r.id), akTid, srrVid));
   }
-  if (statements.length) {
-    const results = (await db.batch(statements)) as Array<{ meta?: { changes?: number } }>;
-    results.forEach((res, i) => { const n = res?.meta?.changes ?? 0; if (n > 0) { linked += n; touched.add(ids[i]); } });
-  }
+  await applyBatch(statements, ids);
 
   const leads = [...touched].slice(0, MAX_AGGREGATES_PER_RUN);
   for (const id of leads) await refreshLeadAggregate(db, id);
-  return { linked, leads: leads.length };
+  const flagged = await db.prepare(
+    "SELECT DISTINCT lead_id FROM video_watches WHERE aggregate_pending = 1 AND lead_id IS NOT NULL LIMIT ?1",
+  ).bind(MAX_AGGREGATES_PER_RUN).all<{ lead_id: number }>();
+  for (const { lead_id } of flagged.results ?? []) {
+    const id = Number(lead_id);
+    if (!touched.has(id)) await refreshLeadAggregate(db, id);
+    await db.prepare("UPDATE video_watches SET aggregate_pending = 0 WHERE lead_id = ?1 AND aggregate_pending = 1").bind(id).run();
+    touched.add(id);
+  }
+  return { linked, leads: touched.size };
 }

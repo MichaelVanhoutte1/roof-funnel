@@ -114,7 +114,8 @@ data on its own server with no API to read it back, so the funnel measures it al
   (`ckv_embed_<uuid>`, a plain `<video>`), every `<wistia-player media-id>` (Wistia Aurora events `time-update`, `play`,
   `pause`, `ended`, `seeking`, `seeked`; properties `currentTime`, `duration`, `muted`, `volume`, `state`) and the
   Vidalytics VSL (`vidalytics_embed_<embedId>`, a plain `<video>`).
-- **Per video:** `key` (`cortana:<uuid>` | `wistia:<mediaId>` | `vidalytics:<embedId>`), `duration`, `max_pct` (the furthest
+- **Per video:** `key` (`cortana:<uuid>` | `wistia:<mediaId>` | `vidalytics:<embedId>`; the Cortana main video is
+  `cortana:21b86bdd-8912-4522-825d-920c79c0f6ef`, Cortana's VSL in the imported history `cortana:03fa2c72-b560-4e7f-ace8-3a1a9ed960b0`), `duration`, `max_pct` (the furthest
   position reached while playing ÷ duration, 0–100) and `watched_seconds` (the union of the played ranges, so seeks and
   replays are not double-counted). Only audible playback counts: Cortana and Vidalytics start a silent muted preview on
   load. Ranges are kept in localStorage (`srr_vw_v1`), so a reload or a later visit on the same device adds up.
@@ -136,6 +137,11 @@ data on its own server with no API to read it back, so the funnel measures it al
 - **On the lead:** `leads.video_watches` = `{"<video_key>": {"pct", "sec", "dur", "first", "last"}}`, merged over every
   viewer key of the lead (max pct / sec, min first, max last), rewritten only when it changes, so the lead is re-pushed
   to the CSP exactly then. It is in the CSP push allowlist and sent as a JSON object (like `tracking`).
+- **Rebuild / import:** a row with `aggregate_pending = 1` makes the 10-minute cron rebuild its lead's aggregate and clear
+  the flag (50 leads per run; flagged rows of any age are also linked by `cid` = `ghl_contact_id`). The one-off import of
+  Cortana's own watch history uses this: rows `viewer_key = 'cortana:<Cortana contact id>'`, `cid` = the GHL contact id,
+  `page = 'import:cortana'`, `aggregate_pending = 1` (shape in `worker/test/video-watch.test.ts`, `importRow`).
+  `UPDATE video_watches SET aggregate_pending = 1 WHERE lead_id IS NOT NULL` rebuilds every lead.
 - **Deploy:** the merge to main runs the migration and the deploy (CI); GitHub Pages ships the script. Either order with
   the CSP is safe (the CSP ignores keys it does not know). Data the pages sent before the deploy is not recoverable.
 

@@ -223,3 +223,49 @@ test("the aggregate is rewritten only when it changes, so the lead is re-pushed 
   assert.equal(cspRow("lead", { id: 2, video_watches: "garbage" }).video_watches, null);
   assert.equal(aggregateJson([]), null);
 });
+
+/* ---------------- Cortana history import ---------------- */
+
+/** The INSERT shape the one-off import file uses (documented in the PR); rerunnable, monotonic like the live path. */
+function importRow(db: ReturnType<typeof realDb>["db"], r: { contact: string; ghl: string; video: string; dur: number; pct: number; sec: number; first: string; last: string }) {
+  db.prepare(
+    `INSERT INTO video_watches (viewer_key, video_key, lead_id, cid, duration, max_pct, watched_seconds, first_at, last_at, page, aggregate_pending)
+     VALUES ('cortana:' || ?1, ?2, (SELECT id FROM leads WHERE ghl_contact_id = ?3 ORDER BY id DESC LIMIT 1), ?3, ?4, ?5, ?6, ?7, ?8, 'import:cortana', 1)
+     ON CONFLICT (viewer_key, video_key) DO UPDATE SET
+       lead_id = COALESCE(video_watches.lead_id, excluded.lead_id), cid = COALESCE(excluded.cid, video_watches.cid),
+       duration = excluded.duration, max_pct = MAX(video_watches.max_pct, excluded.max_pct),
+       watched_seconds = MAX(video_watches.watched_seconds, excluded.watched_seconds),
+       first_at = MIN(video_watches.first_at, excluded.first_at), last_at = MAX(video_watches.last_at, excluded.last_at),
+       aggregate_pending = 1`,
+  ).run(r.contact, r.video, r.ghl, r.dur, r.pct, r.sec, r.first, r.last);
+}
+
+test("imported Cortana history: the cron rebuilds the lead aggregate (merged with live rows), links old rows by GHL id, clears the flag", async () => {
+  const { db, d1 } = realDb();
+  insertLead(db, 1, { ghl_contact_id: "ghlContact0000000001" });
+  // Live tracking already wrote an aggregate for lead 1.
+  await recordWatch(d1, post({ cid: "ghlContact0000000001" }, [{ key: CORTANA, duration: 523.2, max_pct: 30, watched_seconds: 150 }]), NOW);
+  const VSL = "cortana:03fa2c72-b560-4e7f-ace8-3a1a9ed960b0";
+  importRow(db, { contact: "cortanaContactA", ghl: "ghlContact0000000001", video: CORTANA, dur: 523.2, pct: 95, sec: 480, first: "2026-11-10T10:00:00.000Z", last: "2026-11-11T10:00:00.000Z" });
+  importRow(db, { contact: "cortanaContactA", ghl: "ghlContact0000000001", video: VSL, dur: 107, pct: 100, sec: 107, first: "2026-11-09T10:00:00.000Z", last: "2026-11-09T10:05:00.000Z" });
+  // Re-running the file changes nothing it should not.
+  importRow(db, { contact: "cortanaContactA", ghl: "ghlContact0000000001", video: VSL, dur: 107, pct: 50, sec: 20, first: "2026-11-09T10:00:00.000Z", last: "2026-11-09T10:05:00.000Z" });
+  // A contact whose lead row arrives after the import (old last_at, outside the recent window), and many contacts with
+  // no lead at all, which must not crowd it out.
+  importRow(db, { contact: "cortanaContactB", ghl: "ghlContact0000000002", video: CORTANA, dur: 523.2, pct: 12, sec: 60, first: "2026-09-01T10:00:00.000Z", last: "2026-09-01T10:10:00.000Z" });
+  for (let i = 0; i < 120; i++) importRow(db, { contact: `nolead${i}`, ghl: `ghlNoLead${String(i).padStart(11, "0")}`, video: CORTANA, dur: 523.2, pct: 5, sec: 5, first: "2026-11-01T00:00:00.000Z", last: "2026-11-01T00:00:00.000Z" });
+  insertLead(db, 2, { ghl_contact_id: "ghlContact0000000002" });
+
+  assert.equal(leadWatches(db, 1)[VSL], undefined, "not visible before the cron");
+  await linkPendingWatches(d1, later(10));
+  assert.deepEqual(leadWatches(db, 1), {
+    [CORTANA]: { pct: 95, sec: 480, dur: 523.2, first: "2026-11-10T10:00:00.000Z", last: NOW.toISOString() },
+    [VSL]: { pct: 100, sec: 107, dur: 107, first: "2026-11-09T10:00:00.000Z", last: "2026-11-09T10:05:00.000Z" },
+  });
+  assert.deepEqual(leadWatches(db, 2), { [CORTANA]: { pct: 12, sec: 60, dur: 523.2, first: "2026-09-01T10:00:00.000Z", last: "2026-09-01T10:10:00.000Z" } });
+  const flags = plain(db.prepare("SELECT SUM(aggregate_pending = 1 AND lead_id IS NOT NULL) AS linked_pending, SUM(aggregate_pending = 1 AND lead_id IS NULL) AS unlinked_pending FROM video_watches").get());
+  assert.deepEqual(flags, { linked_pending: 0, unlinked_pending: 120 }, "flags cleared once rebuilt; contacts without a lead stay flagged");
+  const stamp = String(plain(db.prepare("SELECT csp_changed_at FROM leads WHERE id = 1").get()).csp_changed_at);
+  assert.deepEqual(await linkPendingWatches(d1, later(20)), { linked: 0, leads: 0 }, "nothing left to do");
+  assert.equal(String(plain(db.prepare("SELECT csp_changed_at FROM leads WHERE id = 1").get()).csp_changed_at), stamp);
+});
