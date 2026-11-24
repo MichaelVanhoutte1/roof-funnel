@@ -1,6 +1,9 @@
 /*
- * Video watch tracking (no dependencies). Measures how much of each video a visitor watched and posts it to the
- * Worker (POST /video-watch), which links it to the lead (worker/src/video-watch.ts).
+ * Video watch tracking (no dependencies). Measures how much of each video a visitor watched and posts it to the roof
+ * CSP (POST https://csp-api.startroofrejuvenating.com/public/video-watch), which stores it and links it to the lead
+ * (2026-11-24: video tracking moved out of the funnel Worker into the CSP). The CSP accepts posts from this site's two
+ * origins only, and only for the videos in its catalog (a new Wistia / Cortana video needs a line in the CSP's
+ * backend/src/modules/leads/videos/lead-video-catalog.ts first).
  *
  * Tracked: every Cortana player (<div id="ckv_embed_<uuid>"> holding a plain <video>), every <wistia-player media-id>
  * web component (Wistia Aurora player.js: `time-update` / `play` / `pause` / `ended` / `seeking` / `seeked` events,
@@ -19,14 +22,14 @@
  * Sent every 15 s while a video plays, shortly after a pause or the end, and with sendBeacon when the page is hidden or
  * left; only videos whose figures moved. Never throws into the page. ?vw_debug=1 logs each payload to the console.
  *
- * Mount: <script src="/assets/video-watch.js" data-api="https://api.startroofrejuvenating.com" defer></script>
+ * Mount: <script src="/assets/video-watch.js" data-api="https://csp-api.startroofrejuvenating.com" defer></script>
  */
 (function () {
   "use strict";
   try {
     var script = document.currentScript;
-    var API = ((script && script.getAttribute("data-api")) || "https://api.startroofrejuvenating.com").replace(/\/+$/, "");
-    var ENDPOINT = API + "/video-watch";
+    var API = ((script && script.getAttribute("data-api")) || "https://csp-api.startroofrejuvenating.com").replace(/\/+$/, "");
+    var ENDPOINT = API + "/public/video-watch";
     var DEBUG = /[?&]vw_debug=1\b/.test(window.location.search);
     var STORE_KEY = "srr_vw_v1";
     var VID_KEY = "srr_vid";
