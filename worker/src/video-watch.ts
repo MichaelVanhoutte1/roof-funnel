@@ -170,19 +170,38 @@ export async function recordWatch(db: Db, post: WatchPost, now = new Date()): Pr
     statements.push(db.prepare("UPDATE video_watches SET srr_vid = ?2 WHERE ak_tid = ?1 AND srr_vid IS NULL").bind(post.akTid, post.srrVid));
   }
   if (leadId) {
-    statements.push(db.prepare(
-      `UPDATE video_watches SET lead_id = ?1 WHERE lead_id IS NULL
-         AND (viewer_key = ?2 OR (?3 IS NOT NULL AND ak_tid = ?3) OR (?4 IS NOT NULL AND srr_vid = ?4))`,
-    ).bind(leadId, post.viewerKey, post.akTid, post.srrVid));
+    statements.push(...linkStatements(db, leadId, { viewerKey: post.viewerKey, akTid: post.akTid, srrVid: post.srrVid }));
   }
   await db.batch(statements);
-  const linked = await db.prepare(
-    `SELECT DISTINCT lead_id FROM video_watches WHERE lead_id IS NOT NULL
-       AND (viewer_key = ?1 OR (?2 IS NOT NULL AND ak_tid = ?2) OR (?3 IS NOT NULL AND srr_vid = ?3)) LIMIT 5`,
-  ).bind(post.viewerKey, post.akTid, post.srrVid).all<{ lead_id: number }>();
+  // Index lookups (a UNION of equalities, never an OR over nullable params).
+  const parts: string[] = [];
+  const params: string[] = [];
+  const add = (col: string, value: string | null | undefined) => {
+    if (!value) return;
+    params.push(value);
+    parts.push(`SELECT lead_id FROM video_watches WHERE ${col} = ?${params.length} AND lead_id IS NOT NULL`);
+  };
+  add("viewer_key", post.viewerKey);
+  add("ak_tid", post.akTid);
+  add("srr_vid", post.srrVid);
+  const linked = await db.prepare(`SELECT DISTINCT lead_id FROM (${parts.join(" UNION ")}) LIMIT 5`)
+    .bind(...params).all<{ lead_id: number }>();
   const leads = (linked.results ?? []).map((r) => Number(r.lead_id));
   for (const id of leads) await refreshLeadAggregate(db, id);
   return leads;
+}
+
+/**
+ * The UPDATEs that link a viewer's unlinked rows to a lead, one per id the viewer carries. Each is a plain equality on an
+ * indexed column: an `(?2 IS NOT NULL AND ak_tid = ?2) OR (...)` form made SQLite scan the whole table on every call
+ * (7.2M rows read in one day, over D1's free daily read limit, 2026-11-24).
+ */
+export function linkStatements(db: Db, leadId: number, ids: { viewerKey?: string | null; akTid?: string | null; srrVid?: string | null }): D1PreparedStatement[] {
+  const out: D1PreparedStatement[] = [];
+  if (ids.viewerKey) out.push(db.prepare("UPDATE video_watches SET lead_id = ?1 WHERE viewer_key = ?2 AND lead_id IS NULL").bind(leadId, ids.viewerKey));
+  if (ids.akTid) out.push(db.prepare("UPDATE video_watches SET lead_id = ?1 WHERE ak_tid = ?2 AND lead_id IS NULL").bind(leadId, ids.akTid));
+  if (ids.srrVid) out.push(db.prepare("UPDATE video_watches SET lead_id = ?1 WHERE srr_vid = ?2 AND lead_id IS NULL").bind(leadId, ids.srrVid));
+  return out;
 }
 
 type AggregateRow = { video_key: string; pct: number; sec: number; dur: number | null; first: string; last: string };
@@ -220,11 +239,8 @@ export async function linkLeadViewer(db: Db, leadId: number, tracking: Record<st
   const akTid = validAkTid(tracking?.ak_tid);
   const srrVid = validSrrVid(tracking?.srr_vid);
   if (!akTid && !srrVid) return false;
-  const res = await db.prepare(
-    `UPDATE video_watches SET lead_id = ?1 WHERE lead_id IS NULL
-       AND ((?2 IS NOT NULL AND ak_tid = ?2) OR (?3 IS NOT NULL AND srr_vid = ?3))`,
-  ).bind(leadId, akTid, srrVid).run();
-  if ((res.meta.changes ?? 0) === 0) return false;
+  const results = (await db.batch(linkStatements(db, leadId, { akTid, srrVid }))) as Array<{ meta?: { changes?: number } }>;
+  if (!results.some((r) => (r?.meta?.changes ?? 0) > 0)) return false;
   await refreshLeadAggregate(db, leadId);
   return true;
 }
@@ -272,11 +288,10 @@ export async function linkPendingWatches(db: Db, now = new Date()): Promise<{ li
     const akTid = validAkTid(r.ak);
     const srrVid = validSrrVid(r.vid);
     if (!akTid && !srrVid) continue;
-    ids.push(Number(r.id));
-    statements.push(db.prepare(
-      `UPDATE video_watches SET lead_id = ?1 WHERE lead_id IS NULL
-         AND ((?2 IS NOT NULL AND ak_tid = ?2) OR (?3 IS NOT NULL AND srr_vid = ?3))`,
-    ).bind(Number(r.id), akTid, srrVid));
+    for (const st of linkStatements(db, Number(r.id), { akTid, srrVid })) {
+      ids.push(Number(r.id));
+      statements.push(st);
+    }
   }
   await applyBatch(statements, ids);
 
