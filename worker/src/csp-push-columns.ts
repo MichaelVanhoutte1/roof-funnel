@@ -2,8 +2,8 @@
  * What of a D1 row the CSP receives (csp-push.ts). An explicit allowlist per table: a column a later migration adds is
  * never sent until someone classifies it here (test/csp-push.test.ts fails until every column is either sent or held
  * back). The sent set is the contract's (every column of `leads` at migration 0013 and of `email_captures` at 0004),
- * minus `credit_identity`, plus the ordering key `csp_changed_at`, plus `video_watches` (0015; a CSP that does not know
- * it yet ignores the key).
+ * minus `credit_identity`, plus the ordering key `csp_changed_at`. `video_watches` (0015) is held back since video
+ * tracking moved into the CSP (2026-11-24: the pages post there; the CSP keeps its own table).
  */
 export type Kind = "lead" | "email_capture";
 
@@ -23,8 +23,6 @@ const LEAD_COLUMNS = [
   "appointment_status", "setter_host", "setter_attended_manual", "closer_attended_manual", "won_manual", "cash_manual",
   "close_date_manual", "outcome_manual_at", "phone_line_type", "phone_carrier", "phone_lookup_at", "booked_at",
   "ghl_abandoned_at", "ghl_abandoned_attempts", "csp_changed_at",
-  // 0015: the lead's video watch aggregate ({"<video_key>": {pct, sec, dur, first, last}}), sent as a JSON object.
-  "video_watches",
 ] as const;
 
 const CAPTURE_COLUMNS = [
@@ -40,7 +38,8 @@ export const SENT_COLUMNS: Record<Kind, readonly string[]> = { lead: LEAD_COLUMN
  * credit-reuse key, with no use on the CSP. The rest is the outbox's own bookkeeping.
  */
 export const HELD_BACK_COLUMNS: Record<Kind, readonly string[]> = {
-  lead: ["credit_identity", "csp_synced_updated_at", "csp_sync_attempts", "csp_sync_error", "csp_next_attempt_at"],
+  // video_watches (0015): the old D1 aggregate; video tracking lives in the CSP now (its own lead_video_watches table).
+  lead: ["credit_identity", "csp_synced_updated_at", "csp_sync_attempts", "csp_sync_error", "csp_next_attempt_at", "video_watches"],
   email_capture: ["csp_synced_updated_at", "csp_sync_attempts", "csp_sync_error", "csp_next_attempt_at"],
 };
 
@@ -57,7 +56,7 @@ export const INTEGER_COLUMNS: Record<Kind, readonly string[]> = {
 };
 
 /** TEXT columns holding a JSON object, sent parsed (an object, or null when empty or not an object). */
-export const JSON_COLUMNS: Record<Kind, readonly string[]> = { lead: ["tracking", "video_watches"], email_capture: ["tracking"] };
+export const JSON_COLUMNS: Record<Kind, readonly string[]> = { lead: ["tracking"], email_capture: ["tracking"] };
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (raw == null) return null;

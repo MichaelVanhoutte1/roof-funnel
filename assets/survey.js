@@ -126,7 +126,8 @@
     // VSL hook test: which video option this visitor was shown (set by the inline script in index.html).
     var vsl = window.FUNNEL_VSL;
     if (vsl && vsl.hook) { out.vsl_hook = vsl.hook; out.vsl_cut = vsl.cut; }
-    // Viewer ids, so the lead is linked to the videos this visitor watched (assets/video-watch.js, worker video-watch.ts):
+    // Viewer ids, so the lead is linked to the videos this visitor watched (assets/video-watch.js posts them to the CSP,
+    // which links its watch rows to the lead through these tracking ids):
     // Cortana's ak_tid and our own srr_vid (set by video-watch.js).
     var ak = viewerCookie("ak_tid") || viewerCookie("ak_session_id") || localGet("ak_fallback_ak_tid");
     if (ak && /^[A-Za-z0-9._:-]{8,128}$/.test(ak)) out.ak_tid = ak;
