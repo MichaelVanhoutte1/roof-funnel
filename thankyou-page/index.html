@@ -56,14 +56,16 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
 @media(max-width:600px){.container{padding:0 20px}}
 
 /* Success header */
-.success-header{text-align:center;padding:60px 0 40px}
-.checkmark{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;background:var(--primary);margin-bottom:24px;font-size:40px}
-.success-title{font-family:'Montserrat',sans-serif;font-size:42px;font-weight:800;line-height:1.2;margin-bottom:16px;color:var(--heading)}
+.success-header{text-align:center;padding:14px 0 24px}
+@media(max-width:600px){.success-header{padding:10px 0 20px}}
+/* the page-builder shell added 40px above the header; trim it (same as the opt-in hero) */
+.hl_page-preview--content .section-U7vfU-BWZF,.hl_page-preview--content .row-Ojc0fS0I9-,.hl_page-preview--content .col-0w8zXt67vP{padding-top:0}
+.success-title{font-family:'Montserrat',sans-serif;font-size:42px;font-weight:800;line-height:1.2;color:var(--heading)}
 @media(max-width:768px){.success-title{font-size:28px}}
-.success-sub{font-size:18px;color:var(--text);line-height:1.6}
 
 /* Step sections */
 .step-section{padding:40px 0;border-top:1px solid var(--border)}
+.success-header+.step-section{border-top:0;padding-top:0}
 .step-badge{display:inline-block;background:var(--step);color:#fff;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;padding:6px 16px;border-radius:20px;margin-bottom:16px;letter-spacing:1px;text-transform:uppercase}
 .step-heading{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;line-height:1.3;margin-bottom:16px;color:var(--heading)}
 @media(max-width:768px){.step-heading{font-size:22px}}
@@ -107,9 +109,7 @@ html,body{background-color:var(--bg)!important;background:var(--bg)!important;co
 <!-- Success Header -->
 <section class="success-header">
 <div class="container">
- <div class="checkmark">✓</div>
- <h1 class="success-title">Congrats On Scheduling Your Dealer Strategy Session!</h1>
- <p class="success-sub">We look forward to meeting you on the call! Follow the steps below to prepare.</p>
+ <h1 class="success-title">WAIT! You're Not Confirmed Yet&hellip;<br>Do This First</h1>
 </div>
 </section>
 
