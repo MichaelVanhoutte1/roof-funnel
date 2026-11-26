@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReport, leadOutcome, offerBand, resultLabel, scoreBand, sourceLabel, vslCutLabel, vslHookLabel, type ReportLead } from "../src/report.ts";
+import { buildReport, knownStage, leadOutcome, offerBand, resultLabel, scoreBand, sourceLabel, vslCutLabel, vslHookLabel, type ReportLead } from "../src/report.ts";
 
 const NOW = "2026-11-10T00:00:00.000Z";
 const lead = (over: Partial<ReportLead> = {}): ReportLead => ({
@@ -62,6 +62,30 @@ test("closer attendance from Fathom / Meet beats the pipeline stage; the stage i
   assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: "Closer Booked" }), NOW)), { toCloser: true, closerShowed: false, closerNoShow: false });
 });
 function pick(o: ReturnType<typeof leadOutcome>) { return { toCloser: o.toCloser, closerShowed: o.closerShowed, closerNoShow: o.closerNoShow }; }
+
+test("the four post-call form stages (roof CSP demo form): shows, setter turn-aways and closer cancels count right", () => {
+  for (const stage of ["Offer Made", "No Offer", "Closer Cancelled", "Closer Disqualified"]) assert.ok(knownStage(` ${stage.toUpperCase()} `), stage);
+  const closer = { closer_appointment_id: "c1", closer_start: "2026-11-05T15:00:00.000Z" };
+  // Offer Made, No Offer, Closer Disqualified: the setter showed and passed the lead on, and the demo showed.
+  for (const stage of ["Offer Made", "No Offer", "Closer Disqualified"]) {
+    const o = leadOutcome(booked({ ...closer, closer_status: "confirmed", pipeline_stage: stage }), NOW);
+    assert.deepEqual(
+      [o.setterShowed, o.setterDq, o.toCloser, o.closerBooked, o.closerShowed, o.closerNoShow, o.closerCancelled, o.won],
+      [true, false, true, true, true, false, false, false],
+      stage,
+    );
+    // a card a human moved past the demo beats a Meet no-show, as for Closer Followup
+    assert.deepEqual(pick(leadOutcome(lead({ pipeline_stage: stage, closer_attended: "no_show" }), NOW)), { toCloser: true, closerShowed: true, closerNoShow: false }, stage);
+  }
+  // Closer Cancelled: booked to a closer, never showed; the cancel is the appointment's own status.
+  const c = leadOutcome(booked({ ...closer, closer_status: "cancelled", pipeline_stage: "Closer Cancelled" }), NOW);
+  assert.deepEqual([c.setterShowed, c.toCloser, c.closerBooked, c.closerShowed, c.closerNoShow, c.closerCancelled], [true, true, true, false, false, true]);
+  const rebooked = leadOutcome(booked({ closer_appointment_id: "c2", closer_start: "2026-11-12T15:00:00.000Z", closer_status: "confirmed", pipeline_stage: "Closer Cancelled" }), NOW);
+  assert.deepEqual([rebooked.closerCancelled, rebooked.closerUpcoming], [false, true]);
+  // none of them is reported as an unknown stage
+  const r = buildReport(["Offer Made", "No Offer", "Closer Cancelled", "Closer Disqualified"].map((pipeline_stage) => lead({ pipeline_stage })), NOW);
+  assert.deepEqual(r.unknownStages, []);
+});
 
 test("closer booked = a closer appointment or a stage from Closer Booked onwards; Setter Qualified alone is not booked", () => {
   assert.equal(leadOutcome(lead({ pipeline_stage: "Setter Qualified" }), NOW).closerBooked, false);
