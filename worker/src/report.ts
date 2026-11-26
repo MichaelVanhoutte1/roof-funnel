@@ -57,7 +57,13 @@ type StageFacts = { talked: boolean; setterNoShow: boolean; setterDq: boolean; t
 
 const NO: StageFacts = { talked: false, setterNoShow: false, setterDq: false, toCloser: false, closerBooked: false, closerShowed: false, closerNoShow: false, won: false };
 
-/** Pipeline stage name (as written in GHL, case-insensitive) → what it says about the lead. */
+/**
+ * Pipeline stage name (as written in GHL, case-insensitive) → what it says about the lead. The last four rows are the
+ * stages the roof CSP's post-call demo form moves a card to (created in GHL by hand, 2026-11-25; the CSP's
+ * `roof-sales-facts.ts` STAGE_FACTS holds the same facts): Offer Made, No Offer and Closer Disqualified come after a
+ * demo that showed (a closer disqualification is not the setter's `setterDq`); Closer Cancelled is booked, never showed
+ * (the cancel itself is read off the closer appointment's status).
+ */
 const STAGE_FACTS: Record<string, StageFacts> = {
   "new lead": NO,
   "setter booked": NO,
@@ -68,6 +74,10 @@ const STAGE_FACTS: Record<string, StageFacts> = {
   "closer followup": { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true },
   "closer booked noshow": { ...NO, talked: true, toCloser: true, closerBooked: true, closerNoShow: true },
   won: { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true, won: true },
+  "closer cancelled": { ...NO, talked: true, toCloser: true, closerBooked: true },
+  "offer made": { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true },
+  "no offer": { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true },
+  "closer disqualified": { ...NO, talked: true, toCloser: true, closerBooked: true, closerShowed: true },
 };
 
 export function knownStage(stage: string | null | undefined): boolean {

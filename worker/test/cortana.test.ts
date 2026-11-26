@@ -55,6 +55,17 @@ test("milestoneWhere follows the report's stage table; milestoneAt reads the tim
   assert.equal(milestoneAt("closer_booked", row({ pipeline_stage: "Setter Qualified", pipeline_stage_at: "2026-11-03T10:00:00Z" })), null);
 });
 
+test("milestoneWhere: the four post-call form stages are setter_qualified and closer_booked, never setter_disqualified", () => {
+  const sq = milestoneWhere("setter_qualified"), cb = milestoneWhere("closer_booked"), sd = milestoneWhere("setter_disqualified");
+  for (const s of ["'offer made'", "'no offer'", "'closer cancelled'", "'closer disqualified'"]) {
+    assert.ok(sq.includes(s), `setter_qualified ${s}`);
+    assert.ok(cb.includes(s), `closer_booked ${s}`);
+    assert.ok(!sd.includes(s), `setter_disqualified ${s}`);
+  }
+  assert.equal(milestoneAt("closer_booked", row({ pipeline_stage: "Closer Disqualified", pipeline_stage_at: "2026-11-04T10:00:00Z" })), "2026-11-04T10:00:00Z");
+  assert.equal(milestoneAt("setter_qualified", row({ pipeline_stage: "Offer Made", pipeline_stage_at: "2026-11-04T10:00:00Z" })), "2026-11-04T10:00:00Z");
+});
+
 test("milestonePayload: lead at the top level, tracking flattened, milestone time as the timestamp", () => {
   const p = milestonePayload("setter_self_booked", row({ booked_at: "2026-11-01T10:00:00Z", appointment_start: "2026-11-02T15:00:00Z" }));
   assert.equal(p.event, "setter_self_booked");
